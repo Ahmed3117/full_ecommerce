@@ -1,0 +1,17 @@
+python-dotenv
+pillow
+gunicorn
+psycopg2-binary
+Django
+django-cors-headers
+django-filter
+django-storages
+djangorestframework
+djangorestframework-api-key
+djangorestframework-simplejwt
+django-cors-headers
+pyyaml 
+ua-parser 
+user-agents
+requests
+django-cors-headers
