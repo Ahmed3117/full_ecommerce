@@ -135,7 +135,8 @@ class StoreReportingListCreateView(generics.ListCreateAPIView):
 
     def perform_create(self, serializer):
         # Get store instance from the provided ID
-        store_id = self.request.data.get('store')
+        store_id = self.request.data.get('store_id')
+        print(f"Store ID: {store_id}")
         store = get_object_or_404(Store, id=store_id)
         
         serializer.save(
