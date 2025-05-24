@@ -9,28 +9,30 @@ from django.shortcuts import get_object_or_404
 
 class StoreRequestListCreateView(generics.ListCreateAPIView):
     serializer_class = StoreRequestSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.AllowAny]  # Changed from IsAuthenticated to AllowAny
 
     def get_queryset(self):
         if self.request.user.is_staff:
             return StoreRequest.objects.all().order_by('-date_added')
-        return StoreRequest.objects.filter(user=self.request.user).order_by('-date_added')
+        if self.request.user.is_authenticated:
+            return StoreRequest.objects.filter(user=self.request.user).order_by('-date_added')
+        return StoreRequest.objects.none()  # Unauthenticated users can't list requests
 
     def create(self, request, *args, **kwargs):
-        # Check if user already has a store request
-        existing_request = StoreRequest.objects.filter(user=request.user).first()
+        # For authenticated users, check if they already have a request
+        if request.user.is_authenticated:
+            existing_request = StoreRequest.objects.filter(user=request.user).first()
+            if existing_request:
+                serializer = self.get_serializer(existing_request)
+                return Response(
+                    {
+                        'message': 'You already have a pending store request',
+                        'your_request': serializer.data
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
         
-        if existing_request:
-            serializer = self.get_serializer(existing_request)
-            return Response(
-                {
-                    'message': 'You already have a pending store request',
-                    'your_request': serializer.data
-                },
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        # Proceed with normal creation if no existing request
+        # Proceed with normal creation
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         self.perform_create(serializer)
@@ -38,16 +40,21 @@ class StoreRequestListCreateView(generics.ListCreateAPIView):
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
     def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
+        if self.request.user.is_authenticated:
+            serializer.save(user=self.request.user)
+        else:
+            serializer.save()  # user will be None
 
 class StoreRequestRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = StoreRequestSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
 
     def get_queryset(self):
         if self.request.user.is_staff:
             return StoreRequest.objects.all()
-        return StoreRequest.objects.filter(user=self.request.user)
+        if self.request.user.is_authenticated:
+            return StoreRequest.objects.filter(user=self.request.user)
+        return StoreRequest.objects.none()
 
 class ApproveStoreRequestView(APIView):
     permission_classes = [permissions.IsAdminUser]
@@ -61,11 +68,28 @@ class ApproveStoreRequestView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
+        # Create user if request was from unauthenticated user
+        if not store_request.user:
+            # Create new user with store type
+            user = User.objects.create_user(
+                username=store_request.email,
+                email=store_request.email,
+                first_name=store_request.first_name,
+                last_name=store_request.last_name,
+                user_type='store'
+            )
+            # You might want to set a temporary password and send it via email
+        else:
+            user = store_request.user
+            user.user_type = 'store'
+            user.save()
+        
         # Create the store
         store = Store.objects.create(
-            user=store_request.user,
-            name=f"{store_request.first_name} {store_request.last_name}",
+            user=user,
+            store_name=store_request.store_name,
             image=store_request.image,
+            national_id_image=store_request.national_id_image,
             government=store_request.government,
             address=store_request.address,
             phone1=store_request.phone1,
@@ -78,10 +102,6 @@ class ApproveStoreRequestView(APIView):
             youtube_link=store_request.youtube_link,
             tiktok_link=store_request.tiktok_link,
         )
-        
-        # Update user type
-        store_request.user.user_type = 'store'
-        store_request.user.save()
         
         # Update request status
         store_request.status = 'accepted'

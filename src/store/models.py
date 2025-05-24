@@ -13,6 +13,8 @@ class StoreRequest(models.Model):
     user = models.ForeignKey(
         User, 
         on_delete=models.CASCADE,
+        null=True,
+        blank=True,
         related_name='store_requests'
     )
     first_name = models.CharField(max_length=100)
@@ -23,6 +25,13 @@ class StoreRequest(models.Model):
         blank=True,
         validators=[FileExtensionValidator(['jpg', 'jpeg', 'png'])]
     )
+    national_id_image = models.ImageField(
+        upload_to='stores/national_ids/',
+        null=True,
+        blank=True,
+        validators=[FileExtensionValidator(['jpg', 'jpeg', 'png','webp'])]
+    )
+    store_name = models.CharField(max_length=100,null=True, blank=True)  # Optional for requests
     government = models.CharField(max_length=100)
     address = models.TextField()
     phone1 = models.CharField(max_length=20)
@@ -47,15 +56,23 @@ class Store(models.Model):
     user = models.OneToOneField(
         User,
         on_delete=models.CASCADE,
-        limit_choices_to={'user_type': 'store'},
+        null=True,
+        blank=True,
+        # limit_choices_to={'user_type': 'store'},
         related_name='store'
     )
-    name = models.CharField(max_length=100)
+    store_name = models.CharField(max_length=100 , null=True , blank=True) # Store name
     image = models.ImageField(
         upload_to='stores/',
         null=True,
         blank=True,
-        validators=[FileExtensionValidator(['jpg', 'jpeg', 'png'])]
+        validators=[FileExtensionValidator(['jpg', 'jpeg', 'png','webp'])]
+    )
+    national_id_image = models.ImageField(
+        upload_to='stores/national_ids/',
+        null=True,
+        blank=True,
+        validators=[FileExtensionValidator(['jpg', 'jpeg', 'png','webp'])]
     )
     government = models.CharField(max_length=100)
     address = models.TextField()

@@ -12,23 +12,29 @@ class UserBasicSerializer(serializers.ModelSerializer):
 class StoreRequestSerializer(serializers.ModelSerializer):
     user = UserBasicSerializer(read_only=True)
     image = serializers.ImageField(required=False, allow_null=True)
+    national_id_image = serializers.ImageField(required=True)
     
     class Meta:
         model = StoreRequest
         fields = '__all__'
-        read_only_fields = ['user', 'status', 'date_added', 'date_updated', 'refuse_reason']
+        read_only_fields = ['status', 'date_added', 'date_updated', 'refuse_reason']
 
     def create(self, validated_data):
-        validated_data['user'] = self.context['request'].user
+        # Set user if authenticated, otherwise leave as None
+        if 'request' in self.context and self.context['request'].user.is_authenticated:
+            validated_data['user'] = self.context['request'].user
         return super().create(validated_data)
 
 class StoreSerializer(serializers.ModelSerializer):
     user = UserBasicSerializer(read_only=True)
     image = serializers.ImageField(required=False, allow_null=True)
+    national_id_image = serializers.ImageField(required=False, allow_null=True)
     
     class Meta:
         model = Store
         fields = '__all__'
+
+
 
 class StoreReportingSerializer(serializers.ModelSerializer):
     store = StoreSerializer(read_only=True)
