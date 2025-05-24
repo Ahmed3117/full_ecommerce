@@ -47,13 +47,12 @@ class UserSerializer(serializers.ModelSerializer):
 
 
 class PasswordResetRequestSerializer(serializers.Serializer):
-    email = serializers.EmailField()
+    phone = serializers.CharField()  # Changed from email to phone
 
 class PasswordResetConfirmSerializer(serializers.Serializer):
-    email = serializers.EmailField()
+    phone = serializers.CharField() 
     otp = serializers.CharField()
     new_password = serializers.CharField()
-
 
 class UserAddressSerializer(serializers.ModelSerializer):
     government = serializers.SerializerMethodField()

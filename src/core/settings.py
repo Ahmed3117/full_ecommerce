@@ -203,6 +203,7 @@ SIMPLE_JWT = {
     "SIGNING_KEY": SECRET_KEY,
     "AUTH_HEADER_TYPES": "Bearer",
     "AUTH_HEADER_NAME": "HTTP_AUTH",
+    'TOKEN_OBTAIN_SERIALIZER': 'rest_framework_simplejwt.serializers.TokenObtainPairSerializer',
 }
 
 # ^ < ==========================CORS ORIGIN CONFIG========================== >

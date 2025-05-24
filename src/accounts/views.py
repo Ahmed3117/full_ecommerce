@@ -2,6 +2,8 @@ from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny,IsAuthenticated,IsAdminUser
+from django.contrib.auth import authenticate
+from accounts.utils import send_whatsapp_massage
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.core.mail import send_mail
 from django.utils import timezone
@@ -35,46 +37,47 @@ def signin(request):
     username = request.data.get('username')
     password = request.data.get('password')
 
+    user = authenticate(username=username, password=password)
+    if not user:
+        return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
+
     try:
-        user = User.objects.get(username=username)
-    except User.DoesNotExist:
-        return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
+        refresh = RefreshToken.for_user(user)
+        serializer = UserSerializer(user)
+        user_data = serializer.data
+        user_data['is_admin'] = user.is_staff or user.is_superuser
 
-    if not user.check_password(password):
-        return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
-
-    refresh = RefreshToken.for_user(user)
-    serializer = UserSerializer(user)
-    user_data = serializer.data
-    user_data['is_admin'] = user.is_staff or user.is_superuser
-
-    return Response({
-        'refresh': str(refresh),
-        'access': str(refresh.access_token),
-        'user': user_data
-    })
+        return Response({
+            'refresh': str(refresh),
+            'access': str(refresh.access_token),
+            'user': user_data
+        })
+    except Exception as e:
+        return Response({'error': f'Token generation failed: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def request_password_reset(request):
     serializer = PasswordResetRequestSerializer(data=request.data)
     if serializer.is_valid():
-        email = serializer.validated_data['email']
+        phone = serializer.validated_data['phone']
         try:
-            user = User.objects.get(email=email)
+            user = User.objects.get(phone=phone)
             otp = ''.join([str(random.randint(0, 9)) for _ in range(6)])
             user.otp = otp
             user.otp_created_at = timezone.now()
             user.save()
             
-            send_mail(
-                'Password Reset OTP',
-                f'Your OTP for password reset is: {otp}',
-                'from@example.com',
-                [email],
-                fail_silently=False,
+            # Send OTP via WhatsApp instead of email
+            req_send = send_whatsapp_massage(
+                massage=f'Your PIN code is {otp}',
+                phone_number=f'{phone}'
             )
-            return Response({'message': 'OTP sent to your email'})
+            
+            if req_send:  # Assuming the function returns True on success
+                return Response({'message': 'OTP sent to your phone via WhatsApp'})
+            else:
+                return Response({'error': 'Failed to send OTP via WhatsApp'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         except User.DoesNotExist:
             return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -84,12 +87,12 @@ def request_password_reset(request):
 def reset_password_confirm(request):
     serializer = PasswordResetConfirmSerializer(data=request.data)
     if serializer.is_valid():
-        email = serializer.validated_data['email']
+        phone = serializer.validated_data['phone']
         otp = serializer.validated_data['otp']
         new_password = serializer.validated_data['new_password']
         
         try:
-            user = User.objects.get(email=email, otp=otp)
+            user = User.objects.get(phone=phone, otp=otp)
             if user.otp_created_at < timezone.now() - timedelta(minutes=10):
                 return Response({'error': 'OTP expired'}, status=status.HTTP_400_BAD_REQUEST)
             
@@ -102,6 +105,7 @@ def reset_password_confirm(request):
         except User.DoesNotExist:
             return Response({'error': 'Invalid OTP'}, status=status.HTTP_400_BAD_REQUEST)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 
 
 class UpdateUserData(generics.UpdateAPIView):
