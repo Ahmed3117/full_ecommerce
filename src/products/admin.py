@@ -1,7 +1,7 @@
 
 from django.contrib import admin
 from .models import (
-    Category, PayRequest, PillItem, PriceDropAlert, ProductSales, SpinWheelDiscount, SpinWheelResult, StockAlert, SubCategory, Brand, Product, ProductImage, 
+    Category, PayRequest, PillItem, PriceDropAlert, ProductSales, SpecialProduct, SpinWheelDiscount, SpinWheelResult, StockAlert, SubCategory, Brand, Product, ProductImage, 
     Color, ProductAvailability, Rating, Shipping, Pill, Discount,
     CouponDiscount, PillAddress
 )
@@ -201,4 +201,22 @@ class SpinWheelResultAdmin(admin.ModelAdmin):
 
 
 
+
+
+@admin.register(SpecialProduct)
+class SpecialProductAdmin(admin.ModelAdmin):
+    list_display = ('product', 'order', 'is_active', 'created_at', 'updated_at')
+    list_filter = ('is_active', 'created_at', 'updated_at')
+    search_fields = ('product__name',)
+    list_editable = ('order', 'is_active')
+    readonly_fields = ('created_at', 'updated_at')
+    fieldsets = (
+        (None, {
+            'fields': ('product', 'special_image', 'order', 'is_active')
+        }),
+        ('Timestamps', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
 
