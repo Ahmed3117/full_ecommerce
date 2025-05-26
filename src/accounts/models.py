@@ -62,21 +62,6 @@ class User(AbstractUser):
         return self.name if self.name else self.username
 
 
-class StudentData(models.Model):
-    user = models.OneToOneField(
-        User, 
-        on_delete=models.CASCADE,
-        limit_choices_to={'user_type': 'student'}
-    )
-    year = models.CharField(
-        max_length=20, 
-        choices=YEAR_CHOICES, 
-        null=True, 
-        blank=True
-    )
-    
-    def __str__(self):
-        return f"{self.user.name}'s student data"
 
 
 class UserAddress(models.Model):

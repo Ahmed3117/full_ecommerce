@@ -54,15 +54,19 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
     otp = serializers.CharField()
     new_password = serializers.CharField()
 
+class ChangePasswordSerializer(serializers.Serializer):
+    old_password = serializers.CharField(required=True, write_only=True)
+    new_password = serializers.CharField(required=True, write_only=True, min_length=8)
+
 class UserAddressSerializer(serializers.ModelSerializer):
-    government = serializers.SerializerMethodField()
+    government_name = serializers.SerializerMethodField()
 
     class Meta:
         model = UserAddress
-        fields = ['id', 'name', 'email', 'phone', 'address', 'government', 'is_default', 'created_at', 'updated_at']
+        fields = ['id', 'name', 'email', 'phone', 'address', 'government', 'government_name','is_default', 'created_at', 'updated_at']
         read_only_fields = ['id', 'created_at', 'updated_at']
 
-    def get_government(self, obj):
+    def get_government_name(self, obj):
         return obj.get_government_display()
 
     def validate(self, data):

@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from about.models import FAQ, About, AboutDescription, Count
+from about.models import FAQ, About, AboutDescription, Caption, Count, SupportDescription
 
 class AboutDescriptionSerializer(serializers.ModelSerializer):
     class Meta:
@@ -23,6 +23,18 @@ class AboutSerializer(serializers.ModelSerializer):
     def get_descriptions(self, obj):
         descriptions = obj.descriptions.filter(is_active=True).order_by('order')
         return AboutDescriptionSerializer(descriptions, many=True).data
+
+class SupportDescriptionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SupportDescription
+        fields = ['id', 'title', 'description', 'is_active', 'created_at']
+        read_only_fields = ['id', 'created_at']
+        
+class CaptionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Caption
+        fields = ['id', 'caption', 'is_active', 'created_at']
+
 
 #------------- Counts -------------#    
 class CountSerializer(serializers.ModelSerializer):

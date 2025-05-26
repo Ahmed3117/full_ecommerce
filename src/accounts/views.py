@@ -9,9 +9,9 @@ from django.core.mail import send_mail
 from django.utils import timezone
 from datetime import timedelta
 import random
-from .serializers import UserAddressSerializer, UserProfileSerializer, UserSerializer, PasswordResetRequestSerializer, PasswordResetConfirmSerializer
+from .serializers import ChangePasswordSerializer, UserAddressSerializer, UserProfileSerializer, UserSerializer, PasswordResetRequestSerializer, PasswordResetConfirmSerializer
 from .models import User, UserAddress
-
+from django.contrib.auth import update_session_auth_hash
 from rest_framework import generics
 
 
@@ -157,6 +157,37 @@ class UserProfileView(generics.RetrieveAPIView):
     def get_object(self):
         return self.request.user
     
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def change_password(request):
+    serializer = ChangePasswordSerializer(data=request.data)
+    
+    if serializer.is_valid():
+        user = request.user
+        old_password = serializer.validated_data['old_password']
+        new_password = serializer.validated_data['new_password']
+        
+        # Verify old password
+        if not user.check_password(old_password):
+            return Response(
+                {'error': 'Old password is incorrect'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Set new password
+        user.set_password(new_password)
+        user.save()
+        
+        # Update session to prevent logout
+        update_session_auth_hash(request, user)
+        
+        return Response(
+            {'message': 'Password updated successfully'}, 
+            status=status.HTTP_200_OK
+        )
+    
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 #^ ---------------------------------------------------- Dashboard ---------------------------- ^#
 
 @api_view(['POST'])

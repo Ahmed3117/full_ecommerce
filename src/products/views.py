@@ -64,6 +64,13 @@ class ActiveSpecialProductsView(generics.ListAPIView):
             is_active=True
         ).order_by('-order')[:10] 
 
+
+
+
+
+
+
+
 class PillCreateView(generics.CreateAPIView):
     queryset = Pill.objects.all()
     serializer_class = PillCreateSerializer
@@ -191,7 +198,23 @@ class PillDetailView(generics.RetrieveAPIView):
     queryset = Pill.objects.all()
     serializer_class = PillDetailSerializer
     lookup_field = 'id'
-    
+
+class UserPillsView(generics.ListAPIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        # Get the authenticated user
+        user = request.user
+        # Retrieve all pills for the user
+        pills = Pill.objects.filter(user=user)
+        # Serialize the data
+        serializer = PillDetailSerializer(pills, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+
+
+
 class CustomerRatingListCreateView(generics.ListCreateAPIView):
     queryset = Rating.objects.all()
     serializer_class = RatingSerializer
@@ -206,17 +229,6 @@ class CustomerRatingDetailView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = RatingSerializer
     permission_classes = [IsAuthenticated, IsOwner]
     
-class UserPillsView(generics.ListAPIView):
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request):
-        # Get the authenticated user
-        user = request.user
-        # Retrieve all pills for the user
-        pills = Pill.objects.filter(user=user)
-        # Serialize the data
-        serializer = PillDetailSerializer(pills, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
 
 class getColors(generics.ListAPIView):
     queryset = Color.objects.all()

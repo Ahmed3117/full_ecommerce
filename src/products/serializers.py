@@ -338,15 +338,6 @@ class PillAddressSerializer(serializers.ModelSerializer):
     def get_government(self, obj):
         return obj.get_government_display()
 
-class ShippingSerializer(serializers.ModelSerializer):
-    government_name = serializers.SerializerMethodField()
-
-    class Meta:
-        model = Shipping
-        fields = ['id','government', 'government_name', 'shipping_price']
-
-    def get_government_name(self, obj):
-        return obj.get_government_display()
 
 class PillItemSerializer(serializers.ModelSerializer):
     product = ProductSerializer(read_only=True)
@@ -411,6 +402,16 @@ class PayRequestSerializer(serializers.ModelSerializer):
         model = PayRequest
         fields = ['id', 'pill', 'image', 'date', 'is_applied']
         read_only_fields = ['id', 'date']
+
+class ShippingSerializer(serializers.ModelSerializer):
+    government_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Shipping
+        fields = ['id','government', 'government_name', 'shipping_price']
+
+    def get_government_name(self, obj):
+        return obj.get_government_display()
 
 class PillDetailSerializer(serializers.ModelSerializer):
     items = PillItemSerializer(many=True, read_only=True)  # Updated to use PillItemSerializer

@@ -1,5 +1,6 @@
 from django.db import models
 from django.core.exceptions import ValidationError
+from django.utils import timezone
 
 
 class About(models.Model):
@@ -43,6 +44,20 @@ class AboutDescription(models.Model):
     def __str__(self):
         return f"{self.about.title} - {self.order}"
 
+class SupportDescription(models.Model):
+    title = models.CharField(max_length=100)
+    description = models.TextField()
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True, null=True)
+
+    def __str__(self):
+        return self.title
+
+    class Meta:
+        verbose_name = "Support Description"
+        verbose_name_plural = "Support Descriptions"
+        ordering = ['-created_at']
+
 class Count(models.Model):
     subscribers_count = models.PositiveIntegerField(default=0)
     doctors_count = models.PositiveIntegerField(default=0)
@@ -56,6 +71,13 @@ class Count(models.Model):
             raise ValidationError("Only one Count instance is allowed.")
         super().save(*args, **kwargs)
 
+class Caption(models.Model):
+    caption = models.CharField(max_length=255)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True , null=True)
+
+    def __str__(self):
+        return self.caption
 #------------- FAQ -------------#
 
 class FAQ(models.Model):

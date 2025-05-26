@@ -2,11 +2,13 @@
 from rest_framework import generics, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.decorators import api_view, permission_classes
 from django_filters.rest_framework import DjangoFilterBackend
 import rest_framework.filters as rest_filters
-from about.models import FAQ, About, AboutDescription, Count
-from about.serializers import AboutDescriptionSerializer, AboutSerializer, CountSerializer, FAQSerializer
-
+from about.models import FAQ, About, AboutDescription, Caption, Count, SupportDescription
+from about.serializers import AboutDescriptionSerializer, AboutSerializer, CaptionSerializer, CountSerializer, FAQSerializer, SupportDescriptionSerializer
+import random
+from rest_framework.permissions import IsAuthenticated, IsAdminUser, AllowAny
 # CRUD for About
 class SingletonAboutAPIView(APIView):
     """
@@ -68,6 +70,26 @@ class AboutDescriptionRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestro
     queryset = AboutDescription.objects.all()
     serializer_class = AboutDescriptionSerializer
 
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def random_caption(request):
+    count = Caption.objects.filter(is_active = True).count()
+    if count == 0:
+        return Response({'error': 'No captions available'}, status=404)
+    
+    random_index = random.randint(0, count - 1)
+    random_caption = Caption.objects.filter(is_active = True)[random_index]
+    serializer = CaptionSerializer(random_caption)
+    return Response(serializer.data)
+
+class ActiveSupportDescriptionListView(generics.ListAPIView):
+    serializer_class = SupportDescriptionSerializer
+    permission_classes = [AllowAny]
+    
+    def get_queryset(self):
+        return SupportDescription.objects.filter(is_active=True).order_by('-created_at')
+    
 # CRUD for FAQ
 class FAQListAPIView(generics.ListAPIView):
     queryset = FAQ.objects.all()
@@ -89,6 +111,19 @@ class FAQRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPIView):
     queryset = FAQ.objects.all()
     serializer_class = FAQSerializer
     
+class SupportDescriptionListCreateView(generics.ListCreateAPIView):
+    queryset = SupportDescription.objects.all()
+    serializer_class = SupportDescriptionSerializer
+    filter_backends = [DjangoFilterBackend, rest_filters.SearchFilter]
+    filterset_fields = ['is_active']
+    search_fields = ['title', 'description']
+    # permission_classes = [IsAdminUser]
+
+class SupportDescriptionRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = SupportDescription.objects.all()
+    serializer_class = SupportDescriptionSerializer
+    # permission_classes = [IsAdminUser]
+    lookup_field = 'pk'
 
 class CountView(generics.RetrieveUpdateAPIView):
     serializer_class = CountSerializer
@@ -98,5 +133,16 @@ class CountView(generics.RetrieveUpdateAPIView):
         return obj
 
 
+class CaptionListCreateView(generics.ListCreateAPIView):
+    queryset = Caption.objects.all()
+    serializer_class = CaptionSerializer
+    permission_classes = [IsAdminUser]  # Only admins can create/see all
+    
+
+class CaptionRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = Caption.objects.all()
+    serializer_class = CaptionSerializer
+    permission_classes = [IsAdminUser]  # Only admins can modify
+    lookup_field = 'pk'
 
 

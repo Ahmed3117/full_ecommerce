@@ -12,6 +12,7 @@ urlpatterns = [
     path('update-user-data/', views.UpdateUserData.as_view(), name='update-user-data'),
     path('get-user-data/', views.GetUserData.as_view(), name='get-user-data'),
     path('profile/', views.UserProfileView.as_view(), name='user-profile'),
+    path('change-password/', views.change_password, name='change_password'),
     # Addresses
     path('addresses/', views.UserAddressListCreateView.as_view(), name='user-address-list-create'),
     path('addresses/<int:pk>/', views.UserAddressRetrieveUpdateDestroyView.as_view(), name='user-address-detail'),

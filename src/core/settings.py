@@ -23,7 +23,7 @@ DEBUG = os.getenv('DEBUG')
 ALLOWED_HOSTS = ['localhost','127.0.0.1','13.39.129.66']
 
 
-#^ Application definition
+#^ Application definition 
 
 INSTALLED_APPS = [
     'django.contrib.admin',
