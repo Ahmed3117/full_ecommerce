@@ -9,8 +9,8 @@ from django.core.mail import send_mail
 from django.utils import timezone
 from datetime import timedelta
 import random
-from .serializers import ChangePasswordSerializer, UserAddressSerializer, UserProfileSerializer, UserSerializer, PasswordResetRequestSerializer, PasswordResetConfirmSerializer
-from .models import User, UserAddress
+from .serializers import ChangePasswordSerializer, UserAddressSerializer, UserProfileImageCreateSerializer, UserProfileImageSerializer, UserProfileSerializer, UserSerializer, PasswordResetRequestSerializer, PasswordResetConfirmSerializer
+from .models import User, UserAddress, UserProfileImage
 from django.contrib.auth import update_session_auth_hash
 from rest_framework import generics
 
@@ -217,5 +217,18 @@ class UserRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [IsAdminUser] 
 
 
+class UserProfileImageListCreateView(generics.ListCreateAPIView):
+    queryset = UserProfileImage.objects.all()
+    # permission_classes = [IsAdminUser]
+
+    def get_serializer_class(self):
+        if self.request.method == 'POST':
+            return UserProfileImageCreateSerializer
+        return UserProfileImageSerializer
+
+class UserProfileImageRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = UserProfileImage.objects.all()
+    serializer_class = UserProfileImageSerializer
+    # permission_classes = [IsAdminUser]
 
 

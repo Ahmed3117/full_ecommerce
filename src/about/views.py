@@ -5,8 +5,9 @@ from rest_framework.views import APIView
 from rest_framework.decorators import api_view, permission_classes
 from django_filters.rest_framework import DjangoFilterBackend
 import rest_framework.filters as rest_filters
-from about.models import FAQ, About, AboutDescription, Caption, Count, SupportDescription
-from about.serializers import AboutDescriptionSerializer, AboutSerializer, CaptionSerializer, CountSerializer, FAQSerializer, SupportDescriptionSerializer
+from django.http import Http404
+from about.models import FAQ, About, AboutDescription, Caption, Count, SupportDescription, WelcomeMessage
+from about.serializers import AboutDescriptionSerializer, AboutSerializer, CaptionSerializer, CountSerializer, FAQSerializer, SupportDescriptionSerializer, WelcomeMessageSerializer, WelcomeMessageUpdateSerializer
 import random
 from rest_framework.permissions import IsAuthenticated, IsAdminUser, AllowAny
 # CRUD for About
@@ -90,13 +91,23 @@ class ActiveSupportDescriptionListView(generics.ListAPIView):
     def get_queryset(self):
         return SupportDescription.objects.filter(is_active=True).order_by('-created_at')
     
-# CRUD for FAQ
-class FAQListAPIView(generics.ListAPIView):
-    queryset = FAQ.objects.all()
-    serializer_class = FAQSerializer
-    filter_backends = [DjangoFilterBackend, rest_filters.SearchFilter]
-    filterset_fields = ['is_active']
-    search_fields = ['title', 'description']
+
+
+
+class UserWelcomeMessageView(generics.RetrieveAPIView):
+    serializer_class = WelcomeMessageSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_object(self):
+        # Get the welcome message for the current user's type
+        user_type = self.request.user.user_type
+        message = WelcomeMessage.objects.filter(user_type=user_type).first()
+
+        if not message:
+            raise Http404("No welcome message found for your user type")
+
+        return message
+
 
 #^ < ==========================Dashboard endpoints========================== >
 
@@ -144,5 +155,57 @@ class CaptionRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = CaptionSerializer
     permission_classes = [IsAdminUser]  # Only admins can modify
     lookup_field = 'pk'
+
+class WelcomeMessageListCreateView(generics.ListCreateAPIView):
+    serializer_class = WelcomeMessageSerializer
+    # permission_classes = [IsAdminUser]
+
+    def get_queryset(self):
+        return WelcomeMessage.objects.all()
+
+    def create(self, request, *args, **kwargs):
+        user_type = request.data.get('user_type')
+        if not user_type:
+            return Response(
+                {"error": "user_type is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Check if message for this user type already exists
+        existing_message = WelcomeMessage.objects.filter(user_type=user_type).first()
+
+        if existing_message:
+            # Update existing message
+            serializer = WelcomeMessageUpdateSerializer(
+                existing_message,
+                data={'text': request.data.get('text')},
+                partial=True
+            )
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            # Create new message
+            return super().create(request, *args, **kwargs)
+
+class WelcomeMessageRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = WelcomeMessage.objects.all()
+    serializer_class = WelcomeMessageSerializer
+    # permission_classes = [IsAdminUser]
+    lookup_field = 'user_type'  # Use user_type as the lookup field instead of id
+
+# CRUD for FAQ
+class FAQListAPIView(generics.ListAPIView):
+    queryset = FAQ.objects.all()
+    serializer_class = FAQSerializer
+    filter_backends = [DjangoFilterBackend, rest_filters.SearchFilter]
+    filterset_fields = ['is_active']
+    search_fields = ['title', 'description']
+
+
+
+
+
 
 

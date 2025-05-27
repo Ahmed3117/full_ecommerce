@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from about.models import FAQ, About, AboutDescription, Caption, Count, SupportDescription
+from about.models import FAQ, About, AboutDescription, Caption, Count, SupportDescription, WelcomeMessage
 
 class AboutDescriptionSerializer(serializers.ModelSerializer):
     class Meta:
@@ -35,7 +35,15 @@ class CaptionSerializer(serializers.ModelSerializer):
         model = Caption
         fields = ['id', 'caption', 'is_active', 'created_at']
 
+class WelcomeMessageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = WelcomeMessage
+        fields = ['id', 'text', 'user_type']
 
+class WelcomeMessageUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = WelcomeMessage
+        fields = ['text']  # Only allow updating the text
 #------------- Counts -------------#    
 class CountSerializer(serializers.ModelSerializer):
     class Meta:

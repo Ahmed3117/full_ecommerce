@@ -1,29 +1,33 @@
 from rest_framework import serializers
+from rest_framework.exceptions import ValidationError
 from collections import defaultdict
 from urllib.parse import urljoin
 from django.utils import timezone
+from django.db.models import Sum
 from accounts.models import User
-from .models import Category, CouponDiscount, Discount, LovedProduct, PayRequest, PillAddress, PillItem, PillStatusLog, PriceDropAlert, ProductDescription, Shipping, SpecialProduct, SpinWheelDiscount, SpinWheelResult, StockAlert, SubCategory, Brand, Product, ProductImage, ProductAvailability, Rating, Color,Pill
-
-
+from .models import (
+    Category, CouponDiscount, Discount, LovedProduct, PayRequest, PillAddress,
+    PillItem, PillStatusLog, PriceDropAlert, ProductDescription, Shipping,
+    SpecialProduct, SpinWheelDiscount, SpinWheelResult, StockAlert,
+    SubCategory, Brand, Product, ProductImage, ProductAvailability, Rating, Color, Pill
+)
 
 class SubCategorySerializer(serializers.ModelSerializer):
-    category_name = serializers.SerializerMethodField()  # Add a field for the category name
+    category_name = serializers.SerializerMethodField()
 
     class Meta:
         model = SubCategory
-        fields = ['id', 'name', 'category', 'category_name']  # Include category_name in the response
+        fields = ['id', 'name', 'category', 'category_name']
 
     def get_category_name(self, obj):
-        # Return the name of the related category
         return obj.category.name
     
 class CategorySerializer(serializers.ModelSerializer):
-    subcategories = SubCategorySerializer(many=True, read_only=True)  # Nested subcategories
+    subcategories = SubCategorySerializer(many=True, read_only=True)
 
     class Meta:
         model = Category
-        fields = ['id', 'name', 'image','subcategories']
+        fields = ['id', 'name', 'image', 'subcategories']
 
 class BrandSerializer(serializers.ModelSerializer):
     class Meta:
@@ -42,7 +46,6 @@ class ProductDescriptionCreateSerializer(serializers.ModelSerializer):
         fields = ['product', 'title', 'description', 'order']
     
     def to_internal_value(self, data):
-        # Handle both single and bulk creation
         if isinstance(data, list):
             return [super().to_internal_value(item) for item in data]
         return super().to_internal_value(data)
@@ -51,6 +54,59 @@ class BulkProductDescriptionSerializer(serializers.ListSerializer):
     def create(self, validated_data):
         descriptions = [ProductDescription(**item) for item in validated_data]
         return ProductDescription.objects.bulk_create(descriptions)
+
+class PillItemCreateUpdateSerializer(serializers.ModelSerializer):
+    product = serializers.PrimaryKeyRelatedField(queryset=Product.objects.all())
+    color = serializers.PrimaryKeyRelatedField(queryset=Color.objects.all(), required=False, allow_null=True)
+
+    class Meta:
+        model = PillItem
+        fields = ['product', 'quantity', 'size', 'color']
+
+    def validate(self, data):
+        # For both create and update cases
+        instance = getattr(self, 'instance', None)
+        product = data.get('product', getattr(instance, 'product', None))
+        size = data.get('size', getattr(instance, 'size', None))
+        color = data.get('color', getattr(instance, 'color', None))
+        quantity = data.get('quantity', getattr(instance, 'quantity', 1))
+
+        # Validate stock availability
+        self._validate_stock(product, size, color, quantity)
+        return data
+
+    def _validate_stock(self, product, size, color, quantity):
+        if quantity <= 0:
+            raise serializers.ValidationError({
+                'quantity': 'Quantity must be greater than 0.'
+            })
+
+        availabilities = ProductAvailability.objects.filter(
+            product=product,
+            size=size,
+            color=color
+        )
+
+        if not availabilities.exists():
+            color_name = color.name if color else 'N/A'
+            raise serializers.ValidationError({
+                'non_field_errors': [
+                    f"The selected variant (Size: {size or 'N/A'}, Color: {color_name}) "
+                    f"is not available for {product.name}."
+                ]
+            })
+
+        total_available = availabilities.aggregate(total=Sum('quantity'))['total'] or 0
+
+        if total_available < quantity:
+            color_name = color.name if color else 'N/A'
+            raise serializers.ValidationError({
+                'quantity': [
+                    f"Not enough stock for {product.name} "
+                    f"(Size: {size or 'N/A'}, Color: {color_name}). "
+                    f"Available: {total_available}, Requested: {quantity}."
+                ]
+            })
 
 
 class ProductImageSerializer(serializers.ModelSerializer):
@@ -66,37 +122,39 @@ class ColorSerializer(serializers.ModelSerializer):
 class ProductAvailabilitySerializer(serializers.ModelSerializer):
     color = serializers.PrimaryKeyRelatedField(
         queryset=Color.objects.all(),
-        allow_null=True,  # Allow null values
-        required=False    # Make the field optional
+        allow_null=True,
+        required=False
     )
     size = serializers.CharField(
-        allow_null=True,  # Allow null values
-        required=False    # Make the field optional
+        allow_null=True,
+        required=False
     )
     product_name = serializers.SerializerMethodField()
     native_price = serializers.FloatField()
 
     class Meta:
         model = ProductAvailability
-        fields = ['id', 'product', 'product_name', 'size', 'color', 'quantity','native_price']
+        fields = ['id', 'product', 'product_name', 'size', 'color', 'quantity', 'native_price']
 
     def get_product_name(self, obj):
         return obj.product.name
 
     def to_representation(self, instance):
         representation = super().to_representation(instance)
-        # Only serialize color if it exists
         if instance.color:
             representation['color'] = ColorSerializer(instance.color).data
         else:
-            representation['color'] = None  # Explicitly set color to null if it doesn't exist
+            representation['color'] = None
         return representation
 
 class ProductAvailabilityBreifedSerializer(serializers.Serializer):
     size = serializers.CharField()
     color = serializers.CharField()
     quantity = serializers.IntegerField()
-    is_low_stock = serializers.BooleanField()
+    is_low_stock = serializers.SerializerMethodField()
+
+    def get_is_low_stock(self, obj):
+        return obj.product.is_low_stock()
 
 class RatingSerializer(serializers.ModelSerializer):
     class Meta:
@@ -113,16 +171,11 @@ class RatingSerializer(serializers.ModelSerializer):
         validated_data['user'] = self.context['request'].user
         return super().create(validated_data)
 
-class ProductImageSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = ProductImage
-        fields = ['id', 'product', 'image']
-
 class ProductImageBulkUploadSerializer(serializers.Serializer):
     product = serializers.PrimaryKeyRelatedField(queryset=Product.objects.all())
     images = serializers.ListField(
-        child=serializers.ImageField(),  # Each item in the list is an ImageField
-        allow_empty=False,  # Ensure at least one image is provided
+        child=serializers.ImageField(),
+        allow_empty=False
     )
 
 class ProductSerializer(serializers.ModelSerializer):
@@ -140,8 +193,6 @@ class ProductSerializer(serializers.ModelSerializer):
     discount_expiry = serializers.SerializerMethodField()
     is_low_stock = serializers.SerializerMethodField()
     descriptions = ProductDescriptionSerializer(many=True, read_only=True)
-
-    # Add direct fields for category, sub_category, and brand
     category_id = serializers.SerializerMethodField()
     category_name = serializers.SerializerMethodField()
     sub_category_id = serializers.SerializerMethodField()
@@ -154,8 +205,9 @@ class ProductSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'name', 'category_id', 'category_name', 'sub_category_id', 'sub_category_name',
             'brand_id', 'brand_name', 'price', 'description', 'date_added', 'discounted_price',
-            'has_discount','current_discount', 'discount_expiry', 'main_image', 'images', 'number_of_ratings', 'average_rating',
-            'total_quantity', 'available_colors', 'available_sizes', 'availabilities','descriptions','threshold', 'is_low_stock','is_important'
+            'has_discount', 'current_discount', 'discount_expiry', 'main_image', 'images', 'number_of_ratings',
+            'average_rating', 'total_quantity', 'available_colors', 'available_sizes', 'availabilities',
+            'descriptions', 'threshold', 'is_low_stock', 'is_important'
         ]
 
     def get_category_id(self, obj):
@@ -177,18 +229,15 @@ class ProductSerializer(serializers.ModelSerializer):
         return obj.brand.name if obj.brand else None
 
     def get_availabilities(self, obj):
-        # Group availabilities by size and color, and sum the quantities
         grouped_availabilities = defaultdict(int)
         for availability in obj.availabilities.all():
             key = (availability.size, availability.color.id if availability.color else None, availability.color.name if availability.color else None)
             grouped_availabilities[key] += availability.quantity
-
-        # Convert the grouped data into the desired format
         result = [
             {
                 "size": size,
-                "color_id": color_id,  # Include color_id
-                "color": color_name,   # Include color name
+                "color_id": color_id,
+                "color": color_name,
                 "quantity": quantity
             }
             for (size, color_id, color_name), quantity in grouped_availabilities.items()
@@ -199,14 +248,12 @@ class ProductSerializer(serializers.ModelSerializer):
         return obj.discounted_price()
 
     def get_current_discount(self, obj):
-        # Get the best active discount (product or category)
         now = timezone.now()
         product_discount = obj.discounts.filter(
             is_active=True,
             discount_start__lte=now,
             discount_end__gte=now
         ).order_by('-discount').first()
-
         category_discount = None
         if obj.category:
             category_discount = obj.category.discounts.filter(
@@ -214,7 +261,6 @@ class ProductSerializer(serializers.ModelSerializer):
                 discount_start__lte=now,
                 discount_end__gte=now
             ).order_by('-discount').first()
-
         if product_discount and category_discount:
             return max(product_discount.discount, category_discount.discount)
         elif product_discount:
@@ -224,21 +270,18 @@ class ProductSerializer(serializers.ModelSerializer):
         return None
 
     def get_discount_expiry(self, obj):
-        # Get the expiry date of the current discount
         now = timezone.now()
         discount = obj.discounts.filter(
             is_active=True,
             discount_start__lte=now,
             discount_end__gte=now
         ).order_by('-discount_end').first()
-
         if not discount and obj.category:
             discount = obj.category.discounts.filter(
                 is_active=True,
                 discount_start__lte=now,
                 discount_end__gte=now
             ).order_by('-discount_end').first()
-
         return discount.discount_end if discount else None
     
     def get_has_discount(self, obj):
@@ -271,26 +314,21 @@ class ProductSerializer(serializers.ModelSerializer):
         return obj.available_sizes()
 
     def get_is_low_stock(self, obj):
-        return obj.total_quantity() <= obj.threshold
-    
+        return obj.is_low_stock()
+
 class ProductBreifedSerializer(serializers.ModelSerializer):
     class Meta:
         model = Product
         fields = ['id', 'name']
 
 class CouponCodeField(serializers.Field):
-    """
-    Custom field to handle coupon code as a string and convert it to the CouponDiscount instance.
-    """
     def to_internal_value(self, data):
-        # Look up the CouponDiscount instance by coupon code
         try:
             return CouponDiscount.objects.get(coupon=data)
         except CouponDiscount.DoesNotExist:
             raise serializers.ValidationError("Coupon does not exist.")
 
     def to_representation(self, value):
-        # Return the coupon code for representation
         return value.coupon
 
 class SpecialProductSerializer(serializers.ModelSerializer):
@@ -304,30 +342,100 @@ class SpecialProductSerializer(serializers.ModelSerializer):
     class Meta:
         model = SpecialProduct
         fields = [
-            'id', 'product', 'product_id', 'special_image', 
+            'id', 'product', 'product_id', 'special_image',
             'order', 'is_active', 'created_at', 'updated_at'
         ]
         read_only_fields = ['created_at', 'updated_at']
 
-class PillCouponApplySerializer(serializers.ModelSerializer):
-    coupon = CouponCodeField()  # Use the custom field for coupon
+class UserCartSerializer(serializers.ModelSerializer):
+    product = ProductSerializer(read_only=True)
+    color = ColorSerializer(read_only=True)
+    total_price = serializers.SerializerMethodField()
 
+    class Meta:
+        model = PillItem
+        fields = ['id', 'product', 'quantity', 'size', 'color', 'total_price', 'date_added']
+
+    def get_total_price(self, obj):
+        return obj.product.discounted_price() * obj.quantity
+
+class PillCouponApplySerializer(serializers.ModelSerializer):
+    coupon = CouponCodeField()
+    # coupon_name = serializers.SerializerMethodField()
+    # coupon_description = serializers.SerializerMethodField()
+    discount_percentage = serializers.SerializerMethodField()
+    
     class Meta:
         model = Pill
-        fields = ['id', 'coupon', 'price_without_coupons', 'coupon_discount', 'price_after_coupon_discount', 'final_price']
-        read_only_fields = ['id', 'price_without_coupons', 'coupon_discount', 'price_after_coupon_discount', 'final_price']
-
-class PillAddressCreateSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = PillAddress
-        fields = ['id', 'pill', 'name', 'email', 'phone', 'address', 'government','pay_method']
-        read_only_fields = ['id', 'pill']
-
-class CouponDiscountSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = CouponDiscount
-        fields = ['coupon', 'discount_value', 'coupon_start', 'coupon_end', 'available_use_times']
-
+        fields = [
+            'id', 'coupon', 
+            'price_without_coupons', 'coupon_discount', 
+            'price_after_coupon_discount', 'final_price',
+            # 'coupon_name', 'coupon_description',
+            'discount_percentage'
+        ]
+        read_only_fields = [
+            'id', 'price_without_coupons', 
+            'coupon_discount', 'price_after_coupon_discount', 
+            'final_price', 
+            # 'coupon_name', 
+            # 'coupon_description', 
+            'discount_percentage'
+        ]
+    
+    def validate_coupon(self, value):
+        pill = self.instance
+        now = timezone.now()
+        
+        # Check if coupon is valid
+        if not (value.coupon_start <= now <= value.coupon_end):
+            raise serializers.ValidationError(
+                { "message": "This coupon has expired."}
+            )
+        
+        # Check if coupon is already applied
+        if pill.coupon:
+            raise serializers.ValidationError(
+                { "message": "A coupon is already applied to this order."}
+            )
+        
+        # Check coupon usage limits
+        if value.available_use_times <= 0:
+            raise serializers.ValidationError(
+                { "message": "This coupon has no remaining uses."}
+            )
+        
+        # Check minimum order value if applicable
+        if hasattr(value, 'min_order_value') and pill.price_without_coupons() < value.min_order_value:
+            raise serializers.ValidationError({
+                "message": f"Order must be at least {value.min_order_value} to use this coupon."
+            })
+        
+        return value
+    
+    def get_coupon_name(self, obj):
+        return obj.coupon.name if obj.coupon else None
+    
+    def get_coupon_description(self, obj):
+        return obj.coupon.description if obj.coupon else None
+    
+    def get_discount_percentage(self, obj):
+        if obj.coupon and obj.price_without_coupons() > 0:
+            return round((obj.coupon_discount / obj.price_without_coupons()) * 100)
+        return 0
+    
+    def update(self, instance, validated_data):
+        coupon = validated_data.get('coupon')
+        instance.coupon = coupon
+        instance.coupon_discount = (coupon.discount_value / 100) * instance.price_without_coupons()
+        instance.save()
+        
+        # Update coupon usage
+        coupon.available_use_times -= 1
+        coupon.save()
+        
+        return instance
+    
 class PillAddressSerializer(serializers.ModelSerializer):
     government = serializers.SerializerMethodField()
 
@@ -338,14 +446,13 @@ class PillAddressSerializer(serializers.ModelSerializer):
     def get_government(self, obj):
         return obj.get_government_display()
 
-
 class PillItemSerializer(serializers.ModelSerializer):
     product = ProductSerializer(read_only=True)
     color = ColorSerializer(read_only=True)
 
     class Meta:
         model = PillItem
-        fields = ['id', 'product', 'quantity', 'size', 'color']
+        fields = ['id', 'product', 'quantity', 'size', 'color', 'status', 'date_added']
 
 class PillItemCreateSerializer(serializers.ModelSerializer):
     class Meta:
@@ -353,15 +460,15 @@ class PillItemCreateSerializer(serializers.ModelSerializer):
         fields = ['product', 'quantity', 'size', 'color']
 
 class PillCreateSerializer(serializers.ModelSerializer):
-    items = PillItemCreateSerializer(many=True)  # Nested serializer for PillItem
-    user_name = serializers.SerializerMethodField() 
-    user_username = serializers.SerializerMethodField()  
+    items = PillItemCreateSerializer(many=True, required=False)  # Make items optional
+    user_name = serializers.SerializerMethodField()
+    user_username = serializers.SerializerMethodField()
     user = serializers.HiddenField(default=serializers.CurrentUserDefault())
 
     class Meta:
         model = Pill
         fields = ['id', 'user', 'user_name', 'user_username', 'items', 'status', 'date_added', 'paid']
-        read_only_fields = ['id','status', 'date_added', 'paid']
+        read_only_fields = ['id', 'status', 'date_added', 'paid']
 
     def get_user_name(self, obj):
         return obj.user.name
@@ -370,20 +477,33 @@ class PillCreateSerializer(serializers.ModelSerializer):
         return obj.user.username
 
     def create(self, validated_data):
-        items_data = validated_data.pop('items')
+        user = validated_data['user']
+        items_data = validated_data.pop('items', None)  # Get items if provided
+        
+        # Create the pill first
         pill = Pill.objects.create(**validated_data)
         
-        # Use bulk_create for better performance
-        pill_items = [
-            PillItem(
-                product=item['product'],
-                quantity=item['quantity'],
-                size=item.get('size'),
-                color=item.get('color')
-            ) for item in items_data
-        ]
-        created_items = PillItem.objects.bulk_create(pill_items)
-        pill.items.set(created_items)
+        if items_data:
+            # If items were provided in the request
+            pill_items = [
+                PillItem(
+                    user=user,  # Important to set the user
+                    product=item['product'],
+                    quantity=item['quantity'],
+                    size=item.get('size'),
+                    color=item.get('color'),
+                    status=pill.status  # Set initial status
+                ) for item in items_data
+            ]
+            created_items = PillItem.objects.bulk_create(pill_items)
+            pill.items.set(created_items)
+        else:
+            # If no items provided, use the user's cart items
+            cart_items = PillItem.objects.filter(user=user, status__isnull=True)
+            if not cart_items.exists():
+                raise ValidationError("No items provided in request and no items in cart to create a pill.")
+            pill.items.set(cart_items)
+            cart_items.update(status=pill.status)
         
         return pill
 
@@ -408,21 +528,32 @@ class ShippingSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Shipping
-        fields = ['id','government', 'government_name', 'shipping_price']
+        fields = ['id', 'government', 'government_name', 'shipping_price']
 
     def get_government_name(self, obj):
         return obj.get_government_display()
 
+class PillAddressCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PillAddress
+        fields = ['id', 'pill', 'name', 'email', 'phone', 'address', 'government', 'pay_method']
+        read_only_fields = ['id', 'pill']
+
+class CouponDiscountSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CouponDiscount
+        fields = ['coupon', 'discount_value', 'coupon_start', 'coupon_end', 'available_use_times']
+
 class PillDetailSerializer(serializers.ModelSerializer):
-    items = PillItemSerializer(many=True, read_only=True)  # Updated to use PillItemSerializer
+    items = PillItemSerializer(many=True, read_only=True)
     coupon = CouponDiscountSerializer(read_only=True)
     pilladdress = PillAddressSerializer(read_only=True)
     shipping_price = serializers.SerializerMethodField()
     status_display = serializers.SerializerMethodField()
-    user_name = serializers.SerializerMethodField() 
+    user_name = serializers.SerializerMethodField()
     user_username = serializers.SerializerMethodField()
     status_logs = PillStatusLogSerializer(many=True, read_only=True)
-    pay_requests = PayRequestSerializer(many=True, read_only=True) 
+    pay_requests = PayRequestSerializer(many=True, read_only=True)
     final_price = serializers.SerializerMethodField()
 
     class Meta:
@@ -441,9 +572,6 @@ class PillDetailSerializer(serializers.ModelSerializer):
         return obj.user.username
     
     def get_shipping_price(self, obj):
-        """
-        Calculate the shipping price dynamically based on the PillAddress.
-        """
         return obj.shipping_price()
 
     def get_status_display(self, obj):
@@ -460,7 +588,7 @@ class DiscountSerializer(serializers.ModelSerializer):
     class Meta:
         model = Discount
         fields = [
-            'id', 'product', 'product_name', 'category', 'category_name', 
+            'id', 'product', 'product_name', 'category', 'category_name',
             'discount', 'discount_start', 'discount_end', 'is_active'
         ]
         read_only_fields = ['is_active']
@@ -504,7 +632,7 @@ class StockAlertSerializer(serializers.ModelSerializer):
         }
 
 class PriceDropAlertSerializer(serializers.ModelSerializer):
-    last_price = serializers.FloatField(required=False)  # Made optional
+    last_price = serializers.FloatField(required=False)
     
     class Meta:
         model = PriceDropAlert
@@ -522,7 +650,7 @@ class PriceDropAlertSerializer(serializers.ModelSerializer):
 class SpinWheelDiscountSerializer(serializers.ModelSerializer):
     class Meta:
         model = SpinWheelDiscount
-        fields = ['id', 'name', 'probability', 'daily_spin_limit', 
+        fields = ['id', 'name', 'probability', 'daily_spin_limit',
                  'min_order_value', 'start_date', 'end_date']
 
 class SpinWheelResultSerializer(serializers.ModelSerializer):
@@ -531,5 +659,3 @@ class SpinWheelResultSerializer(serializers.ModelSerializer):
     class Meta:
         model = SpinWheelResult
         fields = ['id', 'won', 'coupon', 'spin_date', 'used', 'used_date']
-
-

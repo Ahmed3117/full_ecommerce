@@ -19,5 +19,11 @@ urlpatterns = [
     path('support-descriptions/', SupportDescriptionListCreateView.as_view(), name='support-description-list-create'),
     path('support-descriptions/<int:pk>/', SupportDescriptionRetrieveUpdateDestroyView.as_view(), name='support-description-detail'),
     path('support-descriptions/active/', ActiveSupportDescriptionListView.as_view(), name='active-support-descriptions'),
+    # Welcome Messages
+    path('welcome-messages/', WelcomeMessageListCreateView.as_view(), name='welcome-message-list'),
+    path('welcome-messages/<str:user_type>/', WelcomeMessageRetrieveUpdateDestroyView.as_view(), name='welcome-message-detail'),
+
+    # User endpoint
+    path('user-welcome-message/', UserWelcomeMessageView.as_view(), name='user-welcome-message'),
 ]
 

@@ -3,16 +3,36 @@ from rest_framework import serializers
 
 from products.models import LovedProduct, Pill, Product
 from products.serializers import LovedProductSerializer, PillDetailSerializer
-from .models import User, UserAddress
+from .models import User, UserAddress, UserProfileImage
 
+class UserProfileImageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UserProfileImage
+        fields = ['id', 'image', 'created_at', 'updated_at']
 
+class UserProfileImageCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UserProfileImage
+        fields = ['image']
+        
 class UserSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
-    
+    user_profile_image = UserProfileImageSerializer(read_only=True)
+    user_profile_image_id = serializers.PrimaryKeyRelatedField(
+        queryset=UserProfileImage.objects.all(),
+        source='user_profile_image',
+        required=False,
+        allow_null=True
+    )
+
     class Meta:
         model = User
-        fields = ('id', 'username', 'email', 'password', 'name', 
-                 'is_staff', 'is_superuser', 'user_type', 'phone', 'year')
+        fields = (
+            'id', 'username', 'email', 'password', 'name',
+            'is_staff', 'is_superuser', 'user_type', 'phone',
+            'year', 'address', 'user_profile_image',
+            'user_profile_image_id'
+        )
         extra_kwargs = {
             'is_staff': {'read_only': True},
             'is_superuser': {'read_only': True},
@@ -20,6 +40,7 @@ class UserSerializer(serializers.ModelSerializer):
             'user_type': {'required': False, 'allow_null': True},
             'phone': {'required': False, 'allow_null': True, 'allow_blank': True},
             'year': {'required': False, 'allow_null': True},
+            'address': {'required': False, 'allow_null': True, 'allow_blank': True},
         }
 
     def validate(self, data):
@@ -31,6 +52,7 @@ class UserSerializer(serializers.ModelSerializer):
         return data
 
     def create(self, validated_data):
+        profile_image = validated_data.pop('user_profile_image', None)
         email = validated_data.get('email', None)
         user = User.objects.create_user(
             username=validated_data['username'],
@@ -42,8 +64,12 @@ class UserSerializer(serializers.ModelSerializer):
             user_type=validated_data.get('user_type', None),
             phone=validated_data.get('phone', None),
             year=validated_data.get('year', None),
+            address=validated_data.get('address', None),
+            user_profile_image=profile_image
         )
         return user
+
+
 
 
 class PasswordResetRequestSerializer(serializers.Serializer):
@@ -82,13 +108,14 @@ class UserProfileSerializer(serializers.ModelSerializer):
     loved_products = serializers.SerializerMethodField()
     total_spent = serializers.SerializerMethodField()
     favorite_category = serializers.SerializerMethodField()
+    user_profile_image = UserProfileImageSerializer(read_only=True)
 
     class Meta:
         model = User
         fields = [
-            'id', 'username', 'email', 'name','user_type', 'phone', 'year',
-            'addresses', 'pills', 'loved_products',
-            'total_spent', 'favorite_category'
+            'id', 'username', 'email', 'name', 'user_type', 'phone', 'year',
+            'address', 'user_profile_image', 'addresses', 'pills',
+            'loved_products', 'total_spent', 'favorite_category'
         ]
 
     def get_pills(self, obj):

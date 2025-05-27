@@ -2,6 +2,8 @@ from django.db import models
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 
+from accounts.models import USER_TYPE_CHOICES
+
 
 class About(models.Model):
     title = models.CharField(max_length=255)
@@ -78,6 +80,19 @@ class Caption(models.Model):
 
     def __str__(self):
         return self.caption
+
+class WelcomeMessage(models.Model):
+    text = models.TextField()
+    user_type = models.CharField(
+        max_length=20,
+        choices=USER_TYPE_CHOICES,
+        unique=True  # Ensures only one message per user type
+    )
+
+    def __str__(self):
+        return f"Welcome message for {self.user_type}"
+
+
 #------------- FAQ -------------#
 
 class FAQ(models.Model):

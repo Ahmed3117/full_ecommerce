@@ -43,23 +43,41 @@ YEAR_CHOICES = [
         ('third-secondary', 'Third Secondary'),
     ]
 
+class UserProfileImage(models.Model):
+    image = models.ImageField(upload_to='profile_images/')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Profile Image {self.id}"
+
+
 class User(AbstractUser):
     name = models.CharField(max_length=100)
     otp = models.CharField(max_length=6, null=True, blank=True)
     otp_created_at = models.DateTimeField(null=True, blank=True)
     email = models.EmailField(blank=True, null=True, max_length=254)
-    user_type = models.CharField(max_length=20, choices=USER_TYPE_CHOICES,default="student", null=True, blank=True)
+    user_type = models.CharField(max_length=20, choices=USER_TYPE_CHOICES, default="student", null=True, blank=True)
     phone = models.CharField(max_length=20, null=True, blank=True)
     year = models.CharField(
-        max_length=20, 
-        choices=YEAR_CHOICES, 
-        null=True, 
+        max_length=20,
+        choices=YEAR_CHOICES,
+        null=True,
         blank=True,
         help_text="Only applicable for students"
+    )
+    address = models.CharField(max_length=255, null=True, blank=True)
+    user_profile_image = models.ForeignKey(
+        UserProfileImage,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='users'
     )
 
     def __str__(self):
         return self.name if self.name else self.username
+
 
 
 

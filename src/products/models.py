@@ -1,11 +1,12 @@
 import random
 import string
-from accounts.models import User
-from django.db import models
+from django.db import models, transaction
 from django.utils import timezone
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator, MaxValueValidator
+from django.db.models import Sum
 from products.utils import send_whatsapp_message
+from accounts.models import User
 from core import settings
 
 GOVERNMENT_CHOICES = [
@@ -68,11 +69,9 @@ PAYMENT_CHOICES = [
 def generate_pill_number():
     """Generate a unique 20-digit pill number."""
     while True:
-        # Generate a random 20-digit string
         pill_number = ''.join(random.choices(string.digits, k=20))
         if not Pill.objects.filter(pill_number=pill_number).exists():
             return pill_number
-
 
 def create_random_coupon():
     letters = string.ascii_lowercase
@@ -152,7 +151,6 @@ class Product(models.Model):
                 return self.price - ((last_category_discount.discount / 100) * self.price)
         return self.price
 
-    # apply the best discount of all discounts (price_after_product_discount OR price_after_category_discount)
     def discounted_price(self):
         discount = self.get_current_discount()
         if discount:
@@ -181,18 +179,18 @@ class Product(models.Model):
         return 0.0
 
     def total_quantity(self):
-        return sum(availability.quantity for availability in self.availabilities.all())
+        return self.availabilities.aggregate(total=Sum('quantity'))['total'] or 0
 
     def available_colors(self):
-        colors = set()
-        for availability in self.availabilities.all():
-            if availability.color:
-                colors.add((availability.color.id, availability.color.name))
-        # Convert the set to a list of dictionaries
-        return [{"color_id": color_id, "color_name": color_name} for color_id, color_name in colors]
+        """Returns a list of unique colors available for this product."""
+        colors = Color.objects.filter(
+            productavailability__product=self,
+            productavailability__color__isnull=False
+        ).distinct().values('id', 'name')
+        return [{"color_id": color['id'], "color_name": color['name']} for color in colors]
 
     def available_sizes(self):
-        return [availability.size for availability in self.availabilities.all() if availability.size is not None]
+        return self.availabilities.filter(size__isnull=False).values_list('size', flat=True).distinct()
 
     def is_low_stock(self):
         return self.total_quantity() <= self.threshold
@@ -274,11 +272,12 @@ class ProductAvailability(models.Model):
         on_delete=models.CASCADE,
         related_name='availabilities'
     )
-    size = models.CharField(max_length=50, null=True, blank=True)  
+    size = models.CharField(max_length=50, null=True, blank=True)
     color = models.ForeignKey(
         Color,
         on_delete=models.CASCADE,
-        null=True, blank=True  
+        null=True,
+        blank=True
     )
     quantity = models.PositiveIntegerField()
     native_price = models.FloatField(
@@ -286,6 +285,9 @@ class ProductAvailability(models.Model):
         help_text="The original price the owner paid for this product batch"
     )
     date_added = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ['product', 'size', 'color']
 
     def __str__(self):
         return f"{self.product.name} - {self.size} - {self.color.name if self.color else 'No Color'}"
@@ -295,33 +297,12 @@ class ProductSales(models.Model):
     quantity = models.PositiveIntegerField()
     size = models.CharField(max_length=50, null=True, blank=True)
     color = models.ForeignKey(Color, on_delete=models.CASCADE, null=True, blank=True)
-    price_at_sale = models.FloatField()  
+    price_at_sale = models.FloatField()
     date_sold = models.DateTimeField(auto_now_add=True)
     pill = models.ForeignKey('Pill', on_delete=models.CASCADE, related_name='product_sales')
 
     def __str__(self):
         return f"{self.product.name} - {self.quantity} sold on {self.date_sold}"
-
-class Rating(models.Model):
-    product = models.ForeignKey(
-        Product,
-        on_delete=models.CASCADE,
-        related_name='ratings'
-    )
-    user = models.ForeignKey(
-        User,  # Assuming you have a User model
-        on_delete=models.CASCADE
-    )
-    star_number = models.IntegerField()
-    review = models.CharField(max_length=300, default="No review comment")
-    date_added = models.DateTimeField(auto_now_add=True)
-
-    def __str__(self):
-        return f"{self.star_number} stars for {self.product.name} by {self.user.username}"
-
-
-    def star_ranges(self):
-        return range(int(self.star_number)), range(5 - int(self.star_number))
 
 class Shipping(models.Model):
     government = models.CharField(choices=GOVERNMENT_CHOICES, max_length=2)
@@ -331,61 +312,56 @@ class Shipping(models.Model):
         return f"{self.get_government_display()} - {self.shipping_price}"
 
 class PillItem(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='pill_items', null=True, blank=True)
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='pill_items')
     quantity = models.PositiveIntegerField(default=1)
     size = models.CharField(max_length=10, choices=SIZES_CHOICES, null=True)
     color = models.ForeignKey(Color, on_delete=models.SET_NULL, null=True, blank=True)
+    status = models.CharField(choices=PILL_STATUS_CHOICES, max_length=1, null=True, blank=True)
+    date_added = models.DateTimeField(auto_now_add=True, null=True, blank=True)
 
     def __str__(self):
-        return f"{self.product.name} - {self.quantity} - {self.size} - {self.color.name if self.color else 'No Color'}"
+        return f"{self.user.username} - {self.product.name} - {self.quantity} - {self.size} - {self.color.name if self.color else 'No Color'}"
+
+    class Meta:
+        unique_together = ['user', 'product', 'size', 'color']
 
 class Pill(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='pills')
-    items = models.ManyToManyField(PillItem, related_name='pills')  # Updated to relate to PillItem
+    items = models.ManyToManyField(PillItem, related_name='pills')
     status = models.CharField(choices=PILL_STATUS_CHOICES, max_length=1, default='i')
     date_added = models.DateTimeField(auto_now_add=True)
     paid = models.BooleanField(default=False)
     coupon = models.ForeignKey('CouponDiscount', on_delete=models.SET_NULL, null=True, blank=True, related_name='pills')
-    coupon_discount = models.FloatField(default=0.0)  # Store the coupon discount as a field
+    coupon_discount = models.FloatField(default=0.0)
     pill_number = models.CharField(
-        max_length=20, 
+        max_length=20,
         editable=False,
         unique=True,
         default=generate_pill_number
     )
 
     def save(self, *args, **kwargs):
-        # Generate pill number if not set
         if not self.pill_number:
             self.pill_number = generate_pill_number()
-        
-        # Check if this is a new pill
         is_new = not self.pk
-        
-        # First save to create the pill
+        old_status = None if is_new else Pill.objects.get(pk=self.pk).status
         super().save(*args, **kwargs)
-        
         if is_new:
-            # Log the initial status
             PillStatusLog.objects.create(pill=self, status=self.status)
+            self.items.update(status=self.status)
         else:
-            # Check if status changed
-            old_pill = Pill.objects.get(pk=self.pk)
-            if old_pill.status != self.status:
-                # Log the status change
+            if old_status != self.status:
                 status_log, created = PillStatusLog.objects.get_or_create(
-                    pill=self, 
+                    pill=self,
                     status=self.status
                 )
                 if not created:
                     status_log.changed_at = timezone.now()
                     status_log.save()
-            
-            # Handle delivered status
-            if old_pill.status != 'd' and self.status == 'd':
+                self.items.update(status=self.status)
+            if old_status != 'd' and self.status == 'd':
                 self.process_delivery()
-        
-        # Handle payment status
         if self.paid and self.status != 'p':
             self.status = 'p'
             super().save(*args, **kwargs)
@@ -393,20 +369,9 @@ class Pill(models.Model):
 
     def process_delivery(self):
         """Process items when pill is marked as delivered"""
-        for item in self.items.all():
-            # Create sales record
-            ProductSales.objects.create(
-                product=item.product,
-                quantity=item.quantity,
-                size=item.size,
-                color=item.color,
-                price_at_sale=item.product.discounted_price(),
-                pill=self
-            )
-            
-            # Decrease product availability
-            try:
-                availability = ProductAvailability.objects.get(
+        with transaction.atomic():
+            for item in self.items.all():
+                availability = ProductAvailability.objects.select_for_update().get(
                     product=item.product,
                     size=item.size,
                     color=item.color
@@ -415,8 +380,14 @@ class Pill(models.Model):
                     raise ValidationError(f"Not enough inventory for {item.product.name}")
                 availability.quantity -= item.quantity
                 availability.save()
-            except ProductAvailability.DoesNotExist:
-                raise ValidationError(f"No matching availability for {item.product.name}")
+                ProductSales.objects.create(
+                    product=item.product,
+                    quantity=item.quantity,
+                    size=item.size,
+                    color=item.color,
+                    price_at_sale=item.product.discounted_price(),
+                    pill=self
+                )
 
     def send_payment_notification(self):
         """Send payment confirmation if phone exists"""
@@ -429,24 +400,19 @@ class Pill(models.Model):
     def __str__(self):
         return f"Pill ID: {self.id} - Status: {self.get_status_display()} - Date: {self.date_added}"
 
-    # 1. Price without coupons (sum of product.discounted_price() * quantity)
     def price_without_coupons(self):
         return sum(item.product.discounted_price() * item.quantity for item in self.items.all())
 
-    # 2. Calculate coupon discount (dynamically calculate based on the coupon)
     def calculate_coupon_discount(self):
         if self.coupon:
-            # Check if the coupon is valid (within start and end dates)
             now = timezone.now()
             if self.coupon.coupon_start <= now <= self.coupon.coupon_end:
                 return self.coupon.discount_value
-        return 0.0  # No coupon or invalid coupon
+        return 0.0
 
-    # 3. Price after coupon discount
     def price_after_coupon_discount(self):
         return self.price_without_coupons() - (self.coupon_discount or 0)
 
-    # 4. Shipping price (based on PillAddress.government)
     def shipping_price(self):
         if hasattr(self, 'pilladdress'):
             try:
@@ -454,11 +420,65 @@ class Pill(models.Model):
                 return shipping.shipping_price
             except Shipping.DoesNotExist:
                 return 0.0
-        return 0.0  # Default shipping price if PillAddress is not set
+        return 0.0
 
-    # 5. Final price (price_after_coupon_discount + shipping_price)
     def final_price(self):
         return self.price_after_coupon_discount() + self.shipping_price()
+
+class PillAddress(models.Model):
+    pill = models.OneToOneField(Pill, on_delete=models.CASCADE, related_name='pilladdress')
+    name = models.CharField(max_length=150, null=True, blank=True)
+    email = models.EmailField(null=True, blank=True)
+    phone = models.CharField(max_length=15, null=True, blank=True)
+    address = models.CharField(max_length=255, null=True, blank=True)
+    government = models.CharField(choices=GOVERNMENT_CHOICES, max_length=2)
+    pay_method = models.CharField(choices=PAYMENT_CHOICES, max_length=2, default="c")
+
+    def __str__(self):
+        return f"{self.name} - {self.address}"
+
+class PillStatusLog(models.Model):
+    pill = models.ForeignKey(Pill, on_delete=models.CASCADE, related_name='status_logs')
+    status = models.CharField(choices=PILL_STATUS_CHOICES, max_length=1)
+    changed_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.pill.id} - {self.get_status_display()} at {self.changed_at}"
+
+class CouponDiscount(models.Model):
+    coupon = models.CharField(max_length=100, blank=True, null=True, editable=False)
+    discount_value = models.FloatField(null=True, blank=True)
+    coupon_start = models.DateTimeField(null=True, blank=True)
+    coupon_end = models.DateTimeField(null=True, blank=True)
+    available_use_times = models.PositiveIntegerField(default=0)
+
+    def save(self, *args, **kwargs):
+        if not self.coupon:
+            self.coupon = create_random_coupon()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return self.coupon
+
+class Rating(models.Model):
+    product = models.ForeignKey(
+        Product,
+        on_delete=models.CASCADE,
+        related_name='ratings'
+    )
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE
+    )
+    star_number = models.IntegerField()
+    review = models.CharField(max_length=300, default="No review comment")
+    date_added = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.star_number} stars for {self.product.name} by {self.user.username}"
+
+    def star_ranges(self):
+        return range(int(self.star_number)), range(5 - int(self.star_number))
 
 class Discount(models.Model):
     product = models.ForeignKey(Product, on_delete=models.CASCADE, null=True, blank=True, related_name='discounts')
@@ -487,40 +507,6 @@ class Discount(models.Model):
         now = timezone.now()
         return self.is_active and self.discount_start <= now <= self.discount_end
 
-class CouponDiscount(models.Model):
-    coupon = models.CharField(max_length=100, blank=True, null=True, editable=False)
-    discount_value = models.FloatField(null=True, blank=True)
-    coupon_start = models.DateTimeField(null=True, blank=True)
-    coupon_end = models.DateTimeField(null=True, blank=True)
-    available_use_times = models.PositiveIntegerField(default=0)
-
-    def save(self, *args, **kwargs):
-        if not self.coupon:
-            self.coupon = create_random_coupon()
-        super().save(*args, **kwargs)
-
-    def __str__(self):
-        return self.coupon
-
-class PillAddress(models.Model):
-    pill = models.OneToOneField(Pill, on_delete=models.CASCADE, related_name='pilladdress')
-    name = models.CharField(max_length=150, null=True, blank=True)
-    email = models.EmailField( null=True, blank=True)
-    phone = models.CharField(max_length=15, null=True, blank=True)
-    address = models.CharField(max_length=255, null=True, blank=True)
-    government = models.CharField(choices=GOVERNMENT_CHOICES, max_length=2)
-    pay_method = models.CharField(choices=PAYMENT_CHOICES, max_length=2 , default="c")
-    def __str__(self):
-        return f"{self.name} - {self.address}"
-
-class PillStatusLog(models.Model):
-    pill = models.ForeignKey(Pill, on_delete=models.CASCADE, related_name='status_logs')
-    status = models.CharField(choices=PILL_STATUS_CHOICES, max_length=1)
-    changed_at = models.DateTimeField(auto_now_add=True)
-
-    def __str__(self):
-        return f"{self.pill.id} - {self.get_status_display()} at {self.changed_at}"
-
 class PayRequest(models.Model):
     pill = models.ForeignKey('Pill', on_delete=models.CASCADE, related_name='pay_requests')
     image = models.ImageField(upload_to='pay_requests/')
@@ -532,8 +518,8 @@ class PayRequest(models.Model):
 
 class LovedProduct(models.Model):
     user = models.ForeignKey(
-        User, 
-        on_delete=models.CASCADE, 
+        User,
+        on_delete=models.CASCADE,
         related_name='loved_products',
         null=True,
         blank=True
@@ -548,8 +534,6 @@ class LovedProduct(models.Model):
     def __str__(self):
         return f"{self.product.name} loved by {self.user.username if self.user else 'anonymous'}"
 
-#------------- Alert for low stock and proce drop -------------#
-
 class StockAlert(models.Model):
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
     user = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True)
@@ -559,8 +543,8 @@ class StockAlert(models.Model):
 
     class Meta:
         unique_together = [
-            ['product', 'user'],  # For authenticated users
-            ['product', 'email']  # For anonymous users
+            ['product', 'user'],
+            ['product', 'email']
         ]
 
 class PriceDropAlert(models.Model):
@@ -573,12 +557,9 @@ class PriceDropAlert(models.Model):
 
     class Meta:
         unique_together = [
-            ['product', 'user'],  # For authenticated users
-            ['product', 'email']  # For anonymous users
+            ['product', 'user'],
+            ['product', 'email']
         ]
-
-
-#------------- Spin the wheel-------------#
 
 class SpinWheelDiscount(models.Model):
     name = models.CharField(max_length=100)
@@ -608,15 +589,14 @@ class SpinWheelDiscount(models.Model):
         return (self.is_active and 
                 self.start_date <= now <= self.end_date)
 
-
 class SpinWheelResult(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     spin_wheel = models.ForeignKey(SpinWheelDiscount, on_delete=models.CASCADE)
     won = models.BooleanField(default=False)
     coupon = models.ForeignKey(
-        CouponDiscount, 
-        on_delete=models.SET_NULL, 
-        null=True, 
+        CouponDiscount,
+        on_delete=models.SET_NULL,
+        null=True,
         blank=True
     )
     spin_date = models.DateTimeField(auto_now_add=True)
@@ -626,17 +606,13 @@ class SpinWheelResult(models.Model):
     class Meta:
         unique_together = [['user', 'spin_wheel', 'spin_date']]
 
-    
 def prepare_whatsapp_message(phone_number, pill):
     print(f"Preparing WhatsApp message for phone number: {phone_number}")
-    # Prepare the WhatsApp message
     message = (
         f"مرحباً {pill.user.username}،\n\n"
         f"تم استلام طلبك بنجاح.\n\n"
         f"رقم الطلب: {pill.pill_number}\n"
     )
-
-    # Send WhatsApp message
     send_whatsapp_message(
         phone_number=phone_number,
         message=message

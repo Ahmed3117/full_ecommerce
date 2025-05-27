@@ -200,9 +200,6 @@ class SpinWheelResultAdmin(admin.ModelAdmin):
     search_fields = ['user__username', 'spin_wheel__name']
 
 
-
-
-
 @admin.register(SpecialProduct)
 class SpecialProductAdmin(admin.ModelAdmin):
     list_display = ('product', 'order', 'is_active', 'created_at', 'updated_at')

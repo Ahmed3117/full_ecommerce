@@ -20,4 +20,8 @@ urlpatterns = [
     path('create-admin-user/', views.create_admin_user, name='create-admin-user'),
     path('users/', views.UserListView.as_view(), name='user-list-create'),
     path('users/<int:pk>/', views.UserRetrieveUpdateDestroyView.as_view(), name='user-retrieve-update-destroy'),
+    # User profile image 
+    path('profile-images/', views.UserProfileImageListCreateView.as_view(), name='profile-image-list'),
+    path('profile-images/<int:pk>/', views.UserProfileImageRetrieveUpdateDestroyView.as_view(), name='profile-image-detail'),
+
 ]
