@@ -451,6 +451,9 @@ class CouponDiscount(models.Model):
     coupon_start = models.DateTimeField(null=True, blank=True)
     coupon_end = models.DateTimeField(null=True, blank=True)
     available_use_times = models.PositiveIntegerField(default=1)
+    is_wheel_coupon = models.BooleanField(default=False)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True)
+    min_order_value = models.FloatField(null=True, blank=True)
 
     def save(self, *args, **kwargs):
         if not self.coupon:
@@ -563,7 +566,10 @@ class PriceDropAlert(models.Model):
 
 class SpinWheelDiscount(models.Model):
     name = models.CharField(max_length=100)
-    coupon = models.OneToOneField(CouponDiscount, on_delete=models.CASCADE)
+    discount_value = models.FloatField(
+        default=0.0,
+        help_text="Discount value for the coupon created upon winning"
+    )
     probability = models.FloatField(
         default=0.1,
         validators=[MinValueValidator(0), MaxValueValidator(1)],
@@ -582,7 +588,7 @@ class SpinWheelDiscount(models.Model):
     )
 
     def __str__(self):
-        return f"{self.name} ({self.coupon.coupon})"
+        return self.name
 
     def is_available(self):
         now = timezone.now()
@@ -592,16 +598,7 @@ class SpinWheelDiscount(models.Model):
 class SpinWheelResult(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     spin_wheel = models.ForeignKey(SpinWheelDiscount, on_delete=models.CASCADE)
-    won = models.BooleanField(default=False)
-    coupon = models.ForeignKey(
-        CouponDiscount,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True
-    )
     spin_date = models.DateTimeField(auto_now_add=True)
-    used = models.BooleanField(default=False)
-    used_date = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         unique_together = [['user', 'spin_wheel', 'spin_date']]

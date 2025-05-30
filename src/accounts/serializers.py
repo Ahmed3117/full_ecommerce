@@ -28,7 +28,7 @@ class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = (
-            'id', 'username', 'email', 'password', 'name',
+            'id', 'username', 'email', 'password', 'name','government', 'city',
             'is_staff', 'is_superuser', 'user_type', 'phone',
             'year', 'address', 'user_profile_image',
             'user_profile_image_id'
@@ -43,13 +43,13 @@ class UserSerializer(serializers.ModelSerializer):
             'address': {'required': False, 'allow_null': True, 'allow_blank': True},
         }
 
-    def validate(self, data):
-        # Validate that year is only set for students
-        if data.get('year') and data.get('user_type') != 'student':
-            raise serializers.ValidationError(
-                "Year can only be set for student users"
-            )
-        return data
+    # def validate(self, data):
+    #     # Validate that year is only set for students
+    #     if data.get('year') and data.get('user_type') != 'student':
+    #         raise serializers.ValidationError(
+    #             "Year can only be set for student users"
+    #         )
+    #     return data
 
     def create(self, validated_data):
         profile_image = validated_data.pop('user_profile_image', None)
@@ -65,6 +65,8 @@ class UserSerializer(serializers.ModelSerializer):
             phone=validated_data.get('phone', None),
             year=validated_data.get('year', None),
             address=validated_data.get('address', None),
+            government=validated_data.get('government', None),
+            city=validated_data.get('city', None),
             user_profile_image=profile_image
         )
         return user

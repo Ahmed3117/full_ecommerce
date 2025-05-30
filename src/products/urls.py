@@ -38,6 +38,7 @@ urlpatterns = [
     path('products/recommendations/', views.ProductRecommendationsView.as_view(), name='recommendations'),
     path('spin-wheel/', views.SpinWheelView.as_view(), name='spin-wheel'),
     path('spin-wheel/history/', views.SpinWheelHistoryView.as_view(), name='spin-wheel-history'),
+    path('spin-wheel-coupons/', views.UserSpinWheelCouponsView.as_view(), name='user-spin-wheel-coupons'),
     path('products/<int:product_id>/availabilities/', views.ProductAvailabilitiesView.as_view(), name='product-availabilities'),
 
     # Admin Endpoints

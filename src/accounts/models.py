@@ -66,6 +66,8 @@ class User(AbstractUser):
         blank=True,
         help_text="Only applicable for students"
     )
+    government = models.CharField(choices=GOVERNMENT_CHOICES, max_length=2, null=True, blank=True)
+    city = models.CharField(max_length=100, null=True, blank=True)
     address = models.CharField(max_length=255, null=True, blank=True)
     user_profile_image = models.ForeignKey(
         UserProfileImage,
@@ -86,9 +88,10 @@ class UserAddress(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='addresses')
     name = models.CharField(max_length=150)
     email = models.EmailField(null=True, blank=True)
-    phone = models.CharField(max_length=15)
-    address = models.CharField(max_length=255)
+    phone = models.CharField(max_length=15, null=True, blank=True)
     government = models.CharField(choices=GOVERNMENT_CHOICES, max_length=2)
+    city = models.CharField(max_length=100, null=True, blank=True)
+    address = models.CharField(max_length=255)
     is_default = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

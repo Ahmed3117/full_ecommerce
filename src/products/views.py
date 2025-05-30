@@ -16,7 +16,8 @@ from .serializers import *
 from .filters import CategoryFilter, CouponDiscountFilter, PillFilter, ProductFilter
 from .models import (
     Category, Color, CouponDiscount, PillAddress, ProductAvailability,
-    ProductImage, ProductSales, Rating, Shipping, SubCategory, Brand, Product, Pill
+    ProductImage, ProductSales, Rating, Shipping, SubCategory, Brand, Product, Pill,
+    SpinWheelDiscount, SpinWheelResult
 )
 from .permissions import IsOwner, IsOwnerOrReadOnly
 
@@ -81,7 +82,6 @@ class PillItemCreateView(generics.CreateAPIView):
         quantity = serializer.validated_data['quantity']
 
         with transaction.atomic():
-            # Check for existing item
             existing_item = PillItem.objects.filter(
                 user=user,
                 product=product,
@@ -91,10 +91,8 @@ class PillItemCreateView(generics.CreateAPIView):
             ).first()
 
             if existing_item:
-                # Validate the combined quantity
                 combined_quantity = existing_item.quantity + quantity
                 try:
-                    # Reuse the serializer's validation
                     temp_data = {
                         'product': product,
                         'size': size,
@@ -105,14 +103,10 @@ class PillItemCreateView(generics.CreateAPIView):
                 except serializers.ValidationError as e:
                     raise serializers.ValidationError(e.detail)
 
-                # Update existing item
                 existing_item.quantity = combined_quantity
                 existing_item.save()
             else:
-                # Create new item
                 serializer.save(user=user, status=None)
-
-
 
 class PillItemUpdateView(generics.UpdateAPIView):
     serializer_class = PillItemCreateUpdateSerializer
@@ -121,7 +115,6 @@ class PillItemUpdateView(generics.UpdateAPIView):
 
     def get_queryset(self):
         return super().get_queryset().filter(user=self.request.user)
-        # return super().get_queryset().filter(user=self.request.user, status__isnull=True)
 
     def patch(self, request, *args, **kwargs):
         with transaction.atomic():
@@ -153,47 +146,16 @@ class PillCreateView(generics.CreateAPIView, PillItemPermissionMixin):
     permission_classes = [IsAuthenticated]
 
     def perform_create(self, serializer):
-        # The logic is now handled in the serializer
         serializer.save()
 
 class PillCouponApplyView(generics.UpdateAPIView):
     queryset = Pill.objects.all()
     serializer_class = PillCouponApplySerializer
     lookup_field = 'id'
+    permission_classes = [IsAuthenticated]
 
     def perform_update(self, serializer):
-        coupon = serializer.validated_data.get('coupon')
-        pill = self.get_object()
-        if pill.coupon:
-            return Response({"error": "This pill already has a coupon applied."}, status=status.HTTP_400_BAD_REQUEST)
-        if not self.is_coupon_valid(coupon):
-            return Response({"error": "Coupon is not valid or expired."}, status=status.HTTP_400_BAD_REQUEST)
-        if not self.is_coupon_available(coupon):
-            return Response({"error": "Coupon is not available."}, status=status.HTTP_400_BAD_REQUEST)
-        pill = serializer.save(coupon=coupon)
-        coupon_discount_amount = (coupon.discount_value / 100) * pill.price_without_coupons()
-        pill.coupon_discount = coupon_discount_amount
-        pill.save()
-        coupon.available_use_times -= 1
-        coupon.save()
-        return Response(self.get_pill_data(pill), status=status.HTTP_200_OK)
-
-    def is_coupon_valid(self, coupon):
-        now = timezone.now()
-        return coupon.coupon_start <= now <= coupon.coupon_end
-
-    def is_coupon_available(self, coupon):
-        return coupon.available_use_times > 0
-
-    def get_pill_data(self, pill):
-        return {
-            "id": pill.id,
-            "coupon": pill.coupon.coupon if pill.coupon else None,
-            "price_without_coupons": pill.price_without_coupons(),
-            "coupon_discount": pill.coupon_discount,
-            "price_after_coupon_discount": pill.price_after_coupon_discount(),
-            "final_price": pill.final_price(),
-        }
+        serializer.save()
 
 class PillAddressCreateUpdateView(generics.CreateAPIView, generics.UpdateAPIView, PillItemPermissionMixin):
     queryset = PillAddress.objects.all()
@@ -315,6 +277,14 @@ class LovedProductRetrieveDestroyView(generics.RetrieveDestroyAPIView):
     queryset = LovedProduct.objects.all()
     serializer_class = LovedProductSerializer
     permission_classes = [IsOwnerOrReadOnly]
+
+class ProductAvailabilitiesView(generics.ListAPIView):
+    serializer_class = ProductAvailabilitySerializer
+    permission_classes = [AllowAny]
+
+    def get_queryset(self):
+        product_id = self.kwargs['id']
+        return ProductAvailability.objects.filter(product_id=product_id)
 
 class StockAlertCreateView(generics.CreateAPIView):
     serializer_class = StockAlertSerializer
@@ -550,15 +520,31 @@ class SpinWheelView(APIView):
                 {"error": "Daily spin limit reached"},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        won = random.random() < spin_wheel.probability
-        coupon = spin_wheel.coupon if won else None
-        result = SpinWheelResult.objects.create(
-            user=request.user,
-            spin_wheel=spin_wheel,
-            won=won,
-            coupon=coupon
-        )
-        return Response(SpinWheelResultSerializer(result).data)
+        with transaction.atomic():
+            result = SpinWheelResult.objects.create(
+                user=request.user,
+                spin_wheel=spin_wheel
+            )
+            won = random.random() < spin_wheel.probability
+            coupon = None
+            if won:
+                coupon = CouponDiscount.objects.create(
+                    discount_value=spin_wheel.discount_value,
+                    coupon_start=now,
+                    coupon_end=now + timedelta(days=30),  # Default 30-day validity
+                    available_use_times=1,
+                    is_wheel_coupon=True,
+                    user=request.user,
+                    min_order_value=spin_wheel.min_order_value
+                )
+        return Response({
+            'id': result.id,
+            'user': result.user.id,
+            'spin_wheel': result.spin_wheel.id,
+            'spin_date': result.spin_date,
+            'won': won,
+            'coupon': CouponDiscountSerializer(coupon).data if coupon else None
+        })
 
 class SpinWheelHistoryView(generics.ListAPIView):
     serializer_class = SpinWheelResultSerializer
@@ -566,6 +552,19 @@ class SpinWheelHistoryView(generics.ListAPIView):
 
     def get_queryset(self):
         return SpinWheelResult.objects.filter(user=self.request.user).order_by('-spin_date')
+
+class UserSpinWheelCouponsView(generics.ListAPIView):
+    serializer_class = CouponDiscountSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return CouponDiscount.objects.filter(
+            is_wheel_coupon=True,
+            user=self.request.user
+        ).order_by('-coupon_start')
+
+
+# Admin Endpoints
 
 class CategoryListCreateView(generics.ListCreateAPIView):
     queryset = Category.objects.all()
@@ -784,9 +783,9 @@ class RatingDetailView(generics.RetrieveUpdateDestroyAPIView):
 class ProductAvailabilityListCreateView(generics.ListCreateAPIView):
     queryset = ProductAvailability.objects.all()
     serializer_class = ProductAvailabilitySerializer
-    # permission_classes = [IsAdminUser]
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['product', 'color', 'size']
+    permission_classes = [IsAdminUser]
 
     def create(self, request, *args, **kwargs):
         product_id = request.data.get('product')
@@ -800,39 +799,35 @@ class ProductAvailabilityListCreateView(generics.ListCreateAPIView):
         ).first()
         
         if existing_availability:
-            # Update existing record
             serializer = self.get_serializer(existing_availability, data=request.data, partial=True)
             serializer.is_valid(raise_exception=True)
-            
-            # Handle quantity updates (add to existing quantity)
-            if 'quantity' in request.data:
-                new_quantity = existing_availability.quantity + int(request.data['quantity'])
-                serializer.validated_data['quantity'] = new_quantity
-            
-            # Save the updated instance
             serializer.save()
-            
-            headers = self.get_success_headers(serializer.data)
-            return Response(serializer.data, status=status.HTTP_200_OK, headers=headers)
-        else:
-            # Create new record
-            return super().create(request, *args, **kwargs)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 class ProductAvailabilityDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = ProductAvailability.objects.all()
     serializer_class = ProductAvailabilitySerializer
+    permission_classes = [IsAdminUser]
+
+class SpinWheelDiscountListCreateView(generics.ListCreateAPIView):
+    queryset = SpinWheelDiscount.objects.all()
+    serializer_class = SpinWheelDiscountSerializer
     # permission_classes = [IsAdminUser]
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['is_active', 'start_date', 'end_date']
 
-class ProductAvailabilitiesView(generics.ListAPIView):
-    serializer_class = ProductAvailabilityBreifedSerializer
+    def perform_create(self, serializer):
+        serializer.save()
 
-    def get(self, request, product_id):
-        try:
-            product = Product.objects.get(id=product_id)
-        except Product.DoesNotExist:
-            return Response({"error": "Product not found"}, status=status.HTTP_404_NOT_FOUND)
-        serializer = ProductSerializer(product, context={'request': request})
-        return Response(serializer.data['availabilities'], status=status.HTTP_200_OK)
+class SpinWheelDiscountRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = SpinWheelDiscount.objects.all()
+    serializer_class = SpinWheelDiscountSerializer
+    # permission_classes = [IsAdminUser]
 
 class AdminPayRequestCreateView(generics.CreateAPIView):
     queryset = PayRequest.objects.all()
@@ -846,47 +841,25 @@ class AdminPayRequestCreateView(generics.CreateAPIView):
             pill = Pill.objects.get(id=pill_id)
             if pill.paid:
                 raise serializers.ValidationError("This pill is already paid.")
-            serializer.save(pill=pill, is_applied=True)
+            serializer.save(pill=pill)
         except Pill.DoesNotExist:
             raise serializers.ValidationError("Pill does not exist.")
-
-class ApplyPayRequestView(generics.UpdateAPIView):
-    queryset = PayRequest.objects.all()
-    serializer_class = PayRequestSerializer
+        
+class ApplyPayRequestView(APIView):
     permission_classes = [IsAdminUser]
-    lookup_field = 'id'
 
-    def update(self, request, *args, **kwargs):
-        pay_request = self.get_object()
+    def post(self, request, id):
+        pay_request = get_object_or_404(PayRequest, id=id)
         if pay_request.is_applied:
             return Response(
-                {"error": "This payment request is already applied."},
+                {"error": "Pay request already applied"},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        pay_request.is_applied = True
-        pay_request.save()
-        pill = pay_request.pill
-        pill.paid = True
-        pill.status = 'p'
-        pill.save()
-        serializer = self.get_serializer(pay_request)
-        return Response(serializer.data, status=status.HTTP_200_OK)
-    
-
-
-class SpinWheelDiscountListCreateView(generics.ListCreateAPIView):
-    queryset = SpinWheelDiscount.objects.all()
-    serializer_class = SpinWheelDiscountSerializer
-    # permission_classes = [IsAdminUser]
-
-class SpinWheelDiscountRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = SpinWheelDiscount.objects.all()
-    serializer_class = SpinWheelDiscountSerializer
-    # permission_classes = [IsAdminUser]
-
-
-
-
-
-
-
+        with transaction.atomic():
+            pay_request.is_applied = True
+            pay_request.save()
+            pill = pay_request.pill
+            pill.paid = True
+            pill.status = 'p'
+            pill.save()
+        return Response({"status": "Pay request applied successfully"}, status=status.HTTP_200_OK)

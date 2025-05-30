@@ -151,10 +151,11 @@ class DiscountAdmin(admin.ModelAdmin):
 # CouponDiscount admin
 @admin.register(CouponDiscount)
 class CouponDiscountAdmin(admin.ModelAdmin):
-    list_display = ('coupon', 'discount_value', 'coupon_start', 'coupon_end')
-    readonly_fields = ('coupon',)
-    list_filter = ('coupon_start', 'coupon_end')
-
+    list_display = ['coupon', 'discount_value', 'coupon_start', 'coupon_end', 'is_wheel_coupon', 'user', 'min_order_value', 'available_use_times']
+    readonly_fields = ['coupon']
+    list_filter = ['coupon_start', 'coupon_end', 'is_wheel_coupon', 'user']
+    search_fields = ['coupon', 'user__username']
+    
 # PillAddress admin
 @admin.register(PillAddress)
 class PillAddressAdmin(admin.ModelAdmin):
@@ -189,16 +190,15 @@ class PriceDropAlertAdmin(admin.ModelAdmin):
 
 @admin.register(SpinWheelDiscount)
 class SpinWheelDiscountAdmin(admin.ModelAdmin):
-    list_display = ['name', 'coupon', 'probability', 'is_active']
-    list_filter = ['is_active']
-    search_fields = ['name', 'coupon__coupon']
+    list_display = ['name', 'discount_value', 'probability', 'min_order_value', 'is_active', 'start_date', 'end_date']
+    list_filter = ['is_active', 'start_date', 'end_date']
+    search_fields = ['name']
 
 @admin.register(SpinWheelResult)
 class SpinWheelResultAdmin(admin.ModelAdmin):
-    list_display = ['user', 'spin_wheel', 'won', 'used', 'spin_date']
-    list_filter = ['won', 'used', 'spin_wheel']
+    list_display = ['user', 'spin_wheel', 'spin_date']
+    list_filter = ['spin_wheel', 'spin_date']
     search_fields = ['user__username', 'spin_wheel__name']
-
 
 @admin.register(SpecialProduct)
 class SpecialProductAdmin(admin.ModelAdmin):

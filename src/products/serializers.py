@@ -64,14 +64,12 @@ class PillItemCreateUpdateSerializer(serializers.ModelSerializer):
         fields = ['product', 'quantity', 'size', 'color']
 
     def validate(self, data):
-        # For both create and update cases
         instance = getattr(self, 'instance', None)
         product = data.get('product', getattr(instance, 'product', None))
         size = data.get('size', getattr(instance, 'size', None))
         color = data.get('color', getattr(instance, 'color', None))
         quantity = data.get('quantity', getattr(instance, 'quantity', 1))
 
-        # Validate stock availability
         self._validate_stock(product, size, color, quantity)
         return data
 
@@ -107,7 +105,6 @@ class PillItemCreateUpdateSerializer(serializers.ModelSerializer):
                     f"Available: {total_available}, Requested: {quantity}."
                 ]
             })
-
 
 class ProductImageSerializer(serializers.ModelSerializer):
     class Meta:
@@ -362,8 +359,6 @@ class UserCartSerializer(serializers.ModelSerializer):
 
 class PillCouponApplySerializer(serializers.ModelSerializer):
     coupon = CouponCodeField()
-    # coupon_name = serializers.SerializerMethodField()
-    # coupon_description = serializers.SerializerMethodField()
     discount_percentage = serializers.SerializerMethodField()
     
     class Meta:
@@ -372,16 +367,12 @@ class PillCouponApplySerializer(serializers.ModelSerializer):
             'id', 'coupon', 
             'price_without_coupons', 'coupon_discount', 
             'price_after_coupon_discount', 'final_price',
-            # 'coupon_name', 'coupon_description',
             'discount_percentage'
         ]
         read_only_fields = [
             'id', 'price_without_coupons', 
             'coupon_discount', 'price_after_coupon_discount', 
-            'final_price', 
-            # 'coupon_name', 
-            # 'coupon_description', 
-            'discount_percentage'
+            'final_price', 'discount_percentage'
         ]
     
     def validate_coupon(self, value):
@@ -391,34 +382,34 @@ class PillCouponApplySerializer(serializers.ModelSerializer):
         # Check if coupon is valid
         if not (value.coupon_start <= now <= value.coupon_end):
             raise serializers.ValidationError(
-                { "message": "This coupon has expired."}
+                {"message": "This coupon has expired."}
             )
         
         # Check if coupon is already applied
         if pill.coupon:
             raise serializers.ValidationError(
-                { "message": "A coupon is already applied to this order."}
+                {"message": "A coupon is already applied to this order."}
             )
         
         # Check coupon usage limits
         if value.available_use_times <= 0:
             raise serializers.ValidationError(
-                { "message": "This coupon has no remaining uses."}
+                {"message": "This coupon has no remaining uses."}
             )
         
-        # Check minimum order value if applicable
-        if hasattr(value, 'min_order_value') and pill.price_without_coupons() < value.min_order_value:
+        # Check if coupon is tied to user for wheel coupons
+        if value.is_wheel_coupon and value.user != self.context['request'].user:
+            raise serializers.ValidationError(
+                {"message": "This coupon is not valid for your account."}
+            )
+        
+        # Check minimum order value
+        if value.min_order_value and pill.price_without_coupons() < value.min_order_value:
             raise serializers.ValidationError({
                 "message": f"Order must be at least {value.min_order_value} to use this coupon."
             })
         
         return value
-    
-    def get_coupon_name(self, obj):
-        return obj.coupon.name if obj.coupon else None
-    
-    def get_coupon_description(self, obj):
-        return obj.coupon.description if obj.coupon else None
     
     def get_discount_percentage(self, obj):
         if obj.coupon and obj.price_without_coupons() > 0:
@@ -436,7 +427,7 @@ class PillCouponApplySerializer(serializers.ModelSerializer):
         coupon.save()
         
         return instance
-    
+
 class PillAddressSerializer(serializers.ModelSerializer):
     government = serializers.SerializerMethodField()
 
@@ -461,7 +452,7 @@ class PillItemCreateSerializer(serializers.ModelSerializer):
         fields = ['product', 'quantity', 'size', 'color']
 
 class PillCreateSerializer(serializers.ModelSerializer):
-    items = PillItemCreateSerializer(many=True, required=False)  # Make items optional
+    items = PillItemCreateSerializer(many=True, required=False)
     user_name = serializers.SerializerMethodField()
     user_username = serializers.SerializerMethodField()
     user = serializers.HiddenField(default=serializers.CurrentUserDefault())
@@ -479,27 +470,24 @@ class PillCreateSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         user = validated_data['user']
-        items_data = validated_data.pop('items', None)  # Get items if provided
+        items_data = validated_data.pop('items', None)
         
-        # Create the pill first
         pill = Pill.objects.create(**validated_data)
         
         if items_data:
-            # If items were provided in the request
             pill_items = [
                 PillItem(
-                    user=user,  # Important to set the user
+                    user=user,
                     product=item['product'],
                     quantity=item['quantity'],
                     size=item.get('size'),
                     color=item.get('color'),
-                    status=pill.status  # Set initial status
+                    status=pill.status
                 ) for item in items_data
             ]
             created_items = PillItem.objects.bulk_create(pill_items)
             pill.items.set(created_items)
         else:
-            # If no items provided, use the user's cart items
             cart_items = PillItem.objects.filter(user=user, status__isnull=True)
             if not cart_items.exists():
                 raise ValidationError("No items provided in request and no items in cart to create a pill.")
@@ -541,9 +529,19 @@ class PillAddressCreateSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'pill']
 
 class CouponDiscountSerializer(serializers.ModelSerializer):
+    is_active = serializers.SerializerMethodField()
+    is_available = serializers.SerializerMethodField()
+
     class Meta:
         model = CouponDiscount
-        fields = ['coupon', 'discount_value', 'coupon_start', 'coupon_end', 'available_use_times']
+        fields = ['id', 'coupon', 'discount_value', 'coupon_start', 'coupon_end', 'available_use_times', 'is_wheel_coupon', 'user', 'min_order_value', 'is_active', 'is_available']
+
+    def get_is_active(self, obj):
+        now = timezone.now()
+        return obj.coupon_start <= now <= obj.coupon_end
+
+    def get_is_available(self, obj):
+        return obj.available_use_times > 0 and self.get_is_active(obj)
 
 class PillDetailSerializer(serializers.ModelSerializer):
     items = PillItemSerializer(many=True, read_only=True)
@@ -648,14 +646,10 @@ class PriceDropAlertSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Price must be positive")
         return value
 
-
-
 class SpinWheelDiscountSerializer(serializers.ModelSerializer):
-    coupon = serializers.PrimaryKeyRelatedField(queryset=CouponDiscount.objects.all())
-
     class Meta:
         model = SpinWheelDiscount
-        fields = ['id', 'name', 'probability', 'daily_spin_limit', 'min_order_value', 'start_date', 'end_date', 'is_active', 'coupon']
+        fields = ['id', 'name', 'discount_value', 'probability', 'daily_spin_limit', 'min_order_value', 'start_date', 'end_date', 'is_active']
         read_only_fields = ['id']
 
     def validate(self, data):
@@ -670,8 +664,6 @@ class SpinWheelDiscountSerializer(serializers.ModelSerializer):
         return data
 
 class SpinWheelResultSerializer(serializers.ModelSerializer):
-    coupon = CouponDiscountSerializer(read_only=True)
-    
     class Meta:
         model = SpinWheelResult
-        fields = ['id', 'won', 'coupon', 'spin_date', 'used', 'used_date']
+        fields = ['id', 'user', 'spin_wheel', 'spin_date']
