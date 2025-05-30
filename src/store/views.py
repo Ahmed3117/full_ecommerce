@@ -1,6 +1,9 @@
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework import filters
+from django_filters.rest_framework import DjangoFilterBackend
+from rest_framework.filters import SearchFilter
 
 from accounts.models import User
 from .models import StoreRequest, Store, StoreReporting
@@ -137,9 +140,11 @@ class RejectStoreRequestView(APIView):
         )
 
 class StoreListView(generics.ListAPIView):
-    serializer_class = StoreSerializer
-    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
     queryset = Store.objects.all()
+    serializer_class = StoreSerializer
+    filter_backends = [DjangoFilterBackend, SearchFilter]
+    filterset_fields = ['government',]
+    search_fields = ['store_name', 'government', 'address', 'phone1', 'phone2', 'email']
 
 class StoreRetrieveView(generics.RetrieveAPIView):
     serializer_class = StoreSerializer

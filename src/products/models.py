@@ -312,6 +312,7 @@ class Shipping(models.Model):
         return f"{self.get_government_display()} - {self.shipping_price}"
 
 class PillItem(models.Model):
+    pill = models.ForeignKey('Pill', on_delete=models.CASCADE, null=True, blank=True, related_name='pill_items_related')
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='pill_items', null=True, blank=True)
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='pill_items')
     quantity = models.PositiveIntegerField(default=1)
@@ -324,7 +325,7 @@ class PillItem(models.Model):
         return f"{self.user.username} - {self.product.name} - {self.quantity} - {self.size} - {self.color.name if self.color else 'No Color'}"
 
     class Meta:
-        unique_together = ['user', 'product', 'size', 'color', 'status']
+        unique_together = ['user', 'product', 'size', 'color', 'status', 'pill']
 
 class Pill(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='pills')

@@ -4,6 +4,7 @@ from collections import defaultdict
 from urllib.parse import urljoin
 from django.utils import timezone
 from django.db.models import Sum
+from django.db import transaction
 from accounts.models import User
 from .models import (
     Category, CouponDiscount, Discount, LovedProduct, PayRequest, PillAddress,
@@ -548,6 +549,9 @@ class PillItemSerializer(serializers.ModelSerializer):
 
 
 class PillItemCreateSerializer(serializers.ModelSerializer):
+    product = serializers.PrimaryKeyRelatedField(queryset=Product.objects.all())
+    color = serializers.PrimaryKeyRelatedField(queryset=Color.objects.all(), required=False, allow_null=True)
+    status = serializers.CharField(read_only=True)
     max_quantity = serializers.SerializerMethodField(
         read_only=True,
         help_text="Maximum quantity available for this item"
@@ -555,7 +559,7 @@ class PillItemCreateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = PillItem
-        fields = ['id', 'product', 'quantity', 'size', 'color', 'max_quantity']
+        fields = ['id', 'product', 'quantity', 'size', 'color', 'status','max_quantity']
 
     def get_max_quantity(self, obj):
         # For existing instances
@@ -580,6 +584,7 @@ class PillItemCreateSerializer(serializers.ModelSerializer):
         
         total_available = availabilities.aggregate(total=Sum('quantity'))['total'] or 0
         return total_available
+
 class PillCreateSerializer(serializers.ModelSerializer):
     items = PillItemCreateSerializer(many=True, required=False)
     user_name = serializers.SerializerMethodField()
@@ -601,29 +606,39 @@ class PillCreateSerializer(serializers.ModelSerializer):
         user = validated_data['user']
         items_data = validated_data.pop('items', None)
         
-        pill = Pill.objects.create(**validated_data)
-        
-        if items_data:
-            pill_items = [
-                PillItem(
-                    user=user,
-                    product=item['product'],
-                    quantity=item['quantity'],
-                    size=item.get('size'),
-                    color=item.get('color'),
-                    status=pill.status
-                ) for item in items_data
-            ]
-            created_items = PillItem.objects.bulk_create(pill_items)
-            pill.items.set(created_items)
-        else:
-            cart_items = PillItem.objects.filter(user=user, status__isnull=True)
-            if not cart_items.exists():
-                raise ValidationError("No items provided in request and no items in cart to create a pill.")
-            pill.items.set(cart_items)
-            cart_items.update(status=pill.status)
-        
-        return pill
+        with transaction.atomic():
+            # Create the pill first
+            pill = Pill.objects.create(**validated_data)
+            
+            if items_data:
+                # Create new items specifically for this pill
+                pill_items = []
+                for item_data in items_data:
+                    item = PillItem.objects.create(
+                        user=user,
+                        product=item_data['product'],
+                        quantity=item_data['quantity'],
+                        size=item_data.get('size'),
+                        color=item_data.get('color'),
+                        status=pill.status,
+                        pill=pill  # Link directly to the pill
+                    )
+                    pill_items.append(item)
+                pill.items.set(pill_items)
+            else:
+                # Move cart items (status=None) to this pill
+                cart_items = PillItem.objects.filter(user=user, status__isnull=True)
+                if not cart_items.exists():
+                    raise ValidationError("No items provided in request and no items in cart to create a pill.")
+                
+                # Update cart items to belong to this pill
+                for item in cart_items:
+                    item.status = pill.status
+                    item.pill = pill
+                    item.save()
+                pill.items.set(cart_items)
+            
+            return pill
 
 class PillStatusLogSerializer(serializers.ModelSerializer):
     status_display = serializers.SerializerMethodField()

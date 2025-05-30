@@ -1,7 +1,7 @@
 from django.db import models
 from django.core.validators import FileExtensionValidator
 
-from accounts.models import User
+from accounts.models import GOVERNMENT_CHOICES, User
 
 class StoreRequest(models.Model):
     STATUS_CHOICES = [
@@ -32,7 +32,7 @@ class StoreRequest(models.Model):
         validators=[FileExtensionValidator(['jpg', 'jpeg', 'png','webp'])]
     )
     store_name = models.CharField(max_length=100,null=True, blank=True)  # Optional for requests
-    government = models.CharField(max_length=100)
+    government = models.CharField(choices=GOVERNMENT_CHOICES, max_length=2, null=True, blank=True)
     address = models.TextField()
     phone1 = models.CharField(max_length=20,null=True, blank=True)
     phone2 = models.CharField(max_length=20, null=True, blank=True)
@@ -74,7 +74,7 @@ class Store(models.Model):
         blank=True,
         validators=[FileExtensionValidator(['jpg', 'jpeg', 'png','webp'])]
     )
-    government = models.CharField(max_length=100)
+    government = models.CharField(choices=GOVERNMENT_CHOICES, max_length=2, null=True, blank=True)
     address = models.TextField()
     phone1 = models.CharField(max_length=20)
     phone2 = models.CharField(max_length=20, null=True, blank=True)
