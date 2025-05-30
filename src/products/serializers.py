@@ -508,17 +508,17 @@ class PillItemCreateUpdateSerializer(serializers.ModelSerializer):
         #         ]
         #     })
 
-        total_available = availabilities.aggregate(total=Sum('quantity'))['total'] or 0
+        # total_available = availabilities.aggregate(total=Sum('quantity'))['total'] or 0
 
-        if total_available < quantity:
-            color_name = color.name if color else 'N/A'
-            raise serializers.ValidationError({
-                'quantity': [
-                    f"Not enough stock for {product.name} "
-                    f"(Size: {size or 'N/A'}, Color: {color_name}). "
-                    f"Available: {total_available}, Requested: {quantity}."
-                ]
-            })
+        # if total_available < quantity:
+        #     color_name = color.name if color else 'N/A'
+        #     raise serializers.ValidationError({
+        #         'quantity': [
+        #             f"Not enough stock for {product.name} "
+        #             f"(Size: {size or 'N/A'}, Color: {color_name}). "
+        #             f"Available: {total_available}, Requested: {quantity}."
+        #         ]
+        #     })
 
 
 class PillItemSerializer(serializers.ModelSerializer):
