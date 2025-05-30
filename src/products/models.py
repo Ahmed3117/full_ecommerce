@@ -450,7 +450,7 @@ class CouponDiscount(models.Model):
     discount_value = models.FloatField(null=True, blank=True)
     coupon_start = models.DateTimeField(null=True, blank=True)
     coupon_end = models.DateTimeField(null=True, blank=True)
-    available_use_times = models.PositiveIntegerField(default=0)
+    available_use_times = models.PositiveIntegerField(default=1)
 
     def save(self, *args, **kwargs):
         if not self.coupon:

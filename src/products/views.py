@@ -784,14 +784,44 @@ class RatingDetailView(generics.RetrieveUpdateDestroyAPIView):
 class ProductAvailabilityListCreateView(generics.ListCreateAPIView):
     queryset = ProductAvailability.objects.all()
     serializer_class = ProductAvailabilitySerializer
-    permission_classes = [IsAdminUser]
+    # permission_classes = [IsAdminUser]
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['product', 'color', 'size']
+
+    def create(self, request, *args, **kwargs):
+        product_id = request.data.get('product')
+        size = request.data.get('size')
+        color_id = request.data.get('color')
+        
+        existing_availability = ProductAvailability.objects.filter(
+            product_id=product_id,
+            size=size,
+            color_id=color_id
+        ).first()
+        
+        if existing_availability:
+            # Update existing record
+            serializer = self.get_serializer(existing_availability, data=request.data, partial=True)
+            serializer.is_valid(raise_exception=True)
+            
+            # Handle quantity updates (add to existing quantity)
+            if 'quantity' in request.data:
+                new_quantity = existing_availability.quantity + int(request.data['quantity'])
+                serializer.validated_data['quantity'] = new_quantity
+            
+            # Save the updated instance
+            serializer.save()
+            
+            headers = self.get_success_headers(serializer.data)
+            return Response(serializer.data, status=status.HTTP_200_OK, headers=headers)
+        else:
+            # Create new record
+            return super().create(request, *args, **kwargs)
 
 class ProductAvailabilityDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = ProductAvailability.objects.all()
     serializer_class = ProductAvailabilitySerializer
-    permission_classes = [IsAdminUser]
+    # permission_classes = [IsAdminUser]
 
 class ProductAvailabilitiesView(generics.ListAPIView):
     serializer_class = ProductAvailabilityBreifedSerializer
@@ -841,3 +871,22 @@ class ApplyPayRequestView(generics.UpdateAPIView):
         pill.save()
         serializer = self.get_serializer(pay_request)
         return Response(serializer.data, status=status.HTTP_200_OK)
+    
+
+
+class SpinWheelDiscountListCreateView(generics.ListCreateAPIView):
+    queryset = SpinWheelDiscount.objects.all()
+    serializer_class = SpinWheelDiscountSerializer
+    # permission_classes = [IsAdminUser]
+
+class SpinWheelDiscountRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = SpinWheelDiscount.objects.all()
+    serializer_class = SpinWheelDiscountSerializer
+    # permission_classes = [IsAdminUser]
+
+
+
+
+
+
+

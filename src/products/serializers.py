@@ -134,7 +134,8 @@ class ProductAvailabilitySerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ProductAvailability
-        fields = ['id', 'product', 'product_name', 'size', 'color', 'quantity', 'native_price']
+        fields = ['id', 'product', 'product_name', 'size', 'color', 'quantity', 'native_price', 'date_added']
+        read_only_fields = ['date_added']
 
     def get_product_name(self, obj):
         return obj.product.name
@@ -647,11 +648,26 @@ class PriceDropAlertSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Price must be positive")
         return value
 
+
+
 class SpinWheelDiscountSerializer(serializers.ModelSerializer):
+    coupon = serializers.PrimaryKeyRelatedField(queryset=CouponDiscount.objects.all())
+
     class Meta:
         model = SpinWheelDiscount
-        fields = ['id', 'name', 'probability', 'daily_spin_limit',
-                 'min_order_value', 'start_date', 'end_date']
+        fields = ['id', 'name', 'probability', 'daily_spin_limit', 'min_order_value', 'start_date', 'end_date', 'is_active', 'coupon']
+        read_only_fields = ['id']
+
+    def validate(self, data):
+        if data['start_date'] >= data['end_date']:
+            raise serializers.ValidationError("End date must be after start date.")
+        if data['probability'] < 0 or data['probability'] > 1:
+            raise serializers.ValidationError("Probability must be between 0 and 1.")
+        if data['daily_spin_limit'] <= 0:
+            raise serializers.ValidationError("Daily spin limit must be positive.")
+        if data['min_order_value'] < 0:
+            raise serializers.ValidationError("Minimum order value cannot be negative.")
+        return data
 
 class SpinWheelResultSerializer(serializers.ModelSerializer):
     coupon = CouponDiscountSerializer(read_only=True)
