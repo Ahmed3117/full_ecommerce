@@ -324,7 +324,7 @@ class PillItem(models.Model):
         return f"{self.user.username} - {self.product.name} - {self.quantity} - {self.size} - {self.color.name if self.color else 'No Color'}"
 
     class Meta:
-        unique_together = ['user', 'product', 'size', 'color']
+        unique_together = ['user', 'product', 'size', 'color', 'status']
 
 class Pill(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='pills')
@@ -431,7 +431,8 @@ class PillAddress(models.Model):
     email = models.EmailField(null=True, blank=True)
     phone = models.CharField(max_length=15, null=True, blank=True)
     address = models.CharField(max_length=255, null=True, blank=True)
-    government = models.CharField(choices=GOVERNMENT_CHOICES, max_length=2)
+    government = models.CharField(choices=GOVERNMENT_CHOICES, max_length=2, null=True, blank=True)
+    city = models.CharField(max_length=100, null=True, blank=True)
     pay_method = models.CharField(choices=PAYMENT_CHOICES, max_length=2, default="c")
 
     def __str__(self):

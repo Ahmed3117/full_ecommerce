@@ -55,56 +55,7 @@ class BulkProductDescriptionSerializer(serializers.ListSerializer):
         descriptions = [ProductDescription(**item) for item in validated_data]
         return ProductDescription.objects.bulk_create(descriptions)
 
-class PillItemCreateUpdateSerializer(serializers.ModelSerializer):
-    product = serializers.PrimaryKeyRelatedField(queryset=Product.objects.all())
-    color = serializers.PrimaryKeyRelatedField(queryset=Color.objects.all(), required=False, allow_null=True)
 
-    class Meta:
-        model = PillItem
-        fields = ['product', 'quantity', 'size', 'color']
-
-    def validate(self, data):
-        instance = getattr(self, 'instance', None)
-        product = data.get('product', getattr(instance, 'product', None))
-        size = data.get('size', getattr(instance, 'size', None))
-        color = data.get('color', getattr(instance, 'color', None))
-        quantity = data.get('quantity', getattr(instance, 'quantity', 1))
-
-        self._validate_stock(product, size, color, quantity)
-        return data
-
-    def _validate_stock(self, product, size, color, quantity):
-        if quantity <= 0:
-            raise serializers.ValidationError({
-                'quantity': 'Quantity must be greater than 0.'
-            })
-
-        availabilities = ProductAvailability.objects.filter(
-            product=product,
-            size=size,
-            color=color
-        )
-
-        if not availabilities.exists():
-            color_name = color.name if color else 'N/A'
-            raise serializers.ValidationError({
-                'non_field_errors': [
-                    f"The selected variant (Size: {size or 'N/A'}, Color: {color_name}) "
-                    f"is not available for {product.name}."
-                ]
-            })
-
-        total_available = availabilities.aggregate(total=Sum('quantity'))['total'] or 0
-
-        if total_available < quantity:
-            color_name = color.name if color else 'N/A'
-            raise serializers.ValidationError({
-                'quantity': [
-                    f"Not enough stock for {product.name} "
-                    f"(Size: {size or 'N/A'}, Color: {color_name}). "
-                    f"Available: {total_available}, Requested: {quantity}."
-                ]
-            })
 
 class ProductImageSerializer(serializers.ModelSerializer):
     class Meta:
@@ -349,13 +300,50 @@ class UserCartSerializer(serializers.ModelSerializer):
     product = ProductSerializer(read_only=True)
     color = ColorSerializer(read_only=True)
     total_price = serializers.SerializerMethodField()
+    # ADDED: Field for maximum available quantity
+    max_quantity = serializers.SerializerMethodField(
+        read_only=True,
+        help_text="Maximum quantity available for this specific item variant (size/color)"
+    )
 
     class Meta:
         model = PillItem
-        fields = ['id', 'product', 'quantity', 'size', 'color', 'total_price', 'date_added']
+        # UPDATED: Added 'max_quantity' to fields
+        fields = [
+            'id', 
+            'product', 
+            'quantity', 
+            'size', 
+            'color', 
+            'total_price', 
+            'max_quantity', # Added here
+            'date_added'
+        ]
 
     def get_total_price(self, obj):
-        return obj.product.discounted_price() * obj.quantity
+        """Calculates the total price for the item based on its quantity and discounted price."""
+        if obj.product:
+            # Assuming product.discounted_price() method exists and returns the correct price
+            return obj.product.discounted_price() * obj.quantity
+        return 0
+
+    # ADDED: Method to calculate the maximum available quantity
+    def get_max_quantity(self, obj):
+        """Calculates the total available stock for the specific product variant (size/color)."""
+        if not obj.product:
+            return 0
+
+        # Filter ProductAvailability based on the PillItem's product, size, and color
+        availabilities = ProductAvailability.objects.filter(
+            product=obj.product,
+            size=obj.size,
+            color=obj.color
+        )
+        
+        # Sum the quantity from all matching availability records
+        total_available = availabilities.aggregate(total=Sum('quantity'))['total'] or 0
+        return total_available
+
 
 class PillCouponApplySerializer(serializers.ModelSerializer):
     coupon = CouponCodeField()
@@ -433,24 +421,165 @@ class PillAddressSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = PillAddress
-        fields = ['name', 'email', 'phone', 'address', 'government']
+        fields = ['name', 'email', 'phone', 'address', 'government','city', 'pay_method']
 
     def get_government(self, obj):
         return obj.get_government_display()
 
+class PillItemCreateUpdateSerializer(serializers.ModelSerializer):
+    product = serializers.PrimaryKeyRelatedField(queryset=Product.objects.all())
+    color = serializers.PrimaryKeyRelatedField(
+        queryset=Color.objects.all(), 
+        required=False, 
+        allow_null=True
+    )
+    max_quantity = serializers.SerializerMethodField(
+        read_only=True,
+        help_text="Maximum quantity available for this item"
+    )
+
+    class Meta:
+        model = PillItem
+        fields = ['id', 'product', 'quantity', 'size', 'color', 'max_quantity']  # Added 'id'
+        extra_kwargs = {
+            'max_quantity': {'read_only': True}
+        }
+
+    def get_max_quantity(self, obj):
+        # For existing instances (update), use the instance
+        if isinstance(obj, PillItem):
+            product = obj.product
+            size = obj.size
+            color = obj.color
+        # For new instances (create), get from validated data
+        else:
+            product = self.validated_data.get('product')
+            size = self.validated_data.get('size')
+            color = self.validated_data.get('color')
+
+        if not product:
+            return 0
+
+        availabilities = ProductAvailability.objects.filter(
+            product=product,
+            size=size,
+            color=color
+        )
+        
+        total_available = availabilities.aggregate(total=Sum('quantity'))['total'] or 0
+        return total_available
+
+    def to_internal_value(self, data):
+        # Handle case where frontend might send full objects instead of just IDs
+        if isinstance(data.get('product'), dict):
+            data['product'] = data['product'].get('id')
+        if isinstance(data.get('color'), dict):
+            data['color'] = data['color'].get('id')
+        return super().to_internal_value(data)
+
+    def validate(self, data):
+        instance = getattr(self, 'instance', None)
+        product = data.get('product', getattr(instance, 'product', None))
+        size = data.get('size', getattr(instance, 'size', None))
+        color = data.get('color', getattr(instance, 'color', None))
+        quantity = data.get('quantity', getattr(instance, 'quantity', 1))
+
+        self._validate_stock(product, size, color, quantity)
+        return data
+
+    def _validate_stock(self, product, size, color, quantity):
+        if quantity <= 0:
+            raise serializers.ValidationError({
+                'quantity': 'Quantity must be greater than 0.'
+            })
+
+        availabilities = ProductAvailability.objects.filter(
+            product=product,
+            size=size,
+            color=color
+        )
+
+        if not availabilities.exists():
+            color_name = color.name if color else 'N/A'
+            raise serializers.ValidationError({
+                'non_field_errors': [
+                    f"The selected variant (Size: {size or 'N/A'}, Color: {color_name}) "
+                    f"is not available for {product.name}."
+                ]
+            })
+
+        total_available = availabilities.aggregate(total=Sum('quantity'))['total'] or 0
+
+        if total_available < quantity:
+            color_name = color.name if color else 'N/A'
+            raise serializers.ValidationError({
+                'quantity': [
+                    f"Not enough stock for {product.name} "
+                    f"(Size: {size or 'N/A'}, Color: {color_name}). "
+                    f"Available: {total_available}, Requested: {quantity}."
+                ]
+            })
+
+
 class PillItemSerializer(serializers.ModelSerializer):
     product = ProductSerializer(read_only=True)
     color = ColorSerializer(read_only=True)
+    max_quantity = serializers.SerializerMethodField(
+        read_only=True,
+        help_text="Maximum quantity available for this item"
+    )
 
     class Meta:
         model = PillItem
-        fields = ['id', 'product', 'quantity', 'size', 'color', 'status', 'date_added']
+        fields = ['id', 'product', 'quantity', 'size', 'color', 'status', 'date_added', 'max_quantity']
+
+    def get_max_quantity(self, obj):
+        if not obj.product:
+            return 0
+
+        availabilities = ProductAvailability.objects.filter(
+            product=obj.product,
+            size=obj.size,
+            color=obj.color
+        )
+        
+        total_available = availabilities.aggregate(total=Sum('quantity'))['total'] or 0
+        return total_available
+
 
 class PillItemCreateSerializer(serializers.ModelSerializer):
+    max_quantity = serializers.SerializerMethodField(
+        read_only=True,
+        help_text="Maximum quantity available for this item"
+    )
+
     class Meta:
         model = PillItem
-        fields = ['product', 'quantity', 'size', 'color']
+        fields = ['id', 'product', 'quantity', 'size', 'color', 'max_quantity']
 
+    def get_max_quantity(self, obj):
+        # For existing instances
+        if isinstance(obj, PillItem):
+            product = obj.product
+            size = obj.size
+            color = obj.color
+        # For new instances, get from validated data
+        else:
+            product = self.validated_data.get('product')
+            size = self.validated_data.get('size')
+            color = self.validated_data.get('color')
+
+        if not product:
+            return 0
+
+        availabilities = ProductAvailability.objects.filter(
+            product=product,
+            size=size,
+            color=color
+        )
+        
+        total_available = availabilities.aggregate(total=Sum('quantity'))['total'] or 0
+        return total_available
 class PillCreateSerializer(serializers.ModelSerializer):
     items = PillItemCreateSerializer(many=True, required=False)
     user_name = serializers.SerializerMethodField()
@@ -525,7 +654,7 @@ class ShippingSerializer(serializers.ModelSerializer):
 class PillAddressCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = PillAddress
-        fields = ['id', 'pill', 'name', 'email', 'phone', 'address', 'government', 'pay_method']
+        fields = ['id', 'pill', 'name', 'email', 'phone', 'address', 'government','city', 'pay_method']
         read_only_fields = ['id', 'pill']
 
 class CouponDiscountSerializer(serializers.ModelSerializer):

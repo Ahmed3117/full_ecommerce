@@ -86,12 +86,12 @@ class User(AbstractUser):
 
 class UserAddress(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='addresses')
-    name = models.CharField(max_length=150)
+    name = models.CharField(max_length=150,null=True, blank=True)
     email = models.EmailField(null=True, blank=True)
     phone = models.CharField(max_length=15, null=True, blank=True)
-    government = models.CharField(choices=GOVERNMENT_CHOICES, max_length=2)
+    government = models.CharField(choices=GOVERNMENT_CHOICES, max_length=2,null=True, blank=True)
     city = models.CharField(max_length=100, null=True, blank=True)
-    address = models.CharField(max_length=255)
+    address = models.CharField(max_length=255,null=True, blank=True)
     is_default = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

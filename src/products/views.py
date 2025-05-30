@@ -82,6 +82,7 @@ class PillItemCreateView(generics.CreateAPIView):
         quantity = serializer.validated_data['quantity']
 
         with transaction.atomic():
+            # Check for existing item with the exact same attributes
             existing_item = PillItem.objects.filter(
                 user=user,
                 product=product,
@@ -91,22 +92,34 @@ class PillItemCreateView(generics.CreateAPIView):
             ).first()
 
             if existing_item:
+                # If same exact item exists, combine quantities
                 combined_quantity = existing_item.quantity + quantity
                 try:
                     temp_data = {
-                        'product': product,
+                        'product': product.id,
                         'size': size,
-                        'color': color,
+                        'color': color.id if color else None,
                         'quantity': combined_quantity
                     }
-                    serializer.__class__(data=temp_data).is_valid(raise_exception=True)
+                    # Create a new serializer instance for validation
+                    validation_serializer = self.get_serializer(data=temp_data)
+                    validation_serializer.is_valid(raise_exception=True)
                 except serializers.ValidationError as e:
                     raise serializers.ValidationError(e.detail)
 
                 existing_item.quantity = combined_quantity
                 existing_item.save()
+                serializer.instance = existing_item
             else:
+                # Create new item
                 serializer.save(user=user, status=None)
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
 class PillItemUpdateView(generics.UpdateAPIView):
     serializer_class = PillItemCreateUpdateSerializer
