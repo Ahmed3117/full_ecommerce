@@ -499,14 +499,14 @@ class PillItemCreateUpdateSerializer(serializers.ModelSerializer):
             color=color
         )
 
-        if not availabilities.exists():
-            color_name = color.name if color else 'N/A'
-            raise serializers.ValidationError({
-                'non_field_errors': [
-                    f"The selected variant (Size: {size or 'N/A'}, Color: {color_name}) "
-                    f"is not available for {product.name}."
-                ]
-            })
+        # if not availabilities.exists():
+        #     color_name = color.name if color else 'N/A'
+        #     raise serializers.ValidationError({
+        #         'non_field_errors': [
+        #             f"The selected variant (Size: {size or 'N/A'}, Color: {color_name}) "
+        #             f"is not available for {product.name}."
+        #         ]
+        #     })
 
         total_available = availabilities.aggregate(total=Sum('quantity'))['total'] or 0
 
