@@ -1,5 +1,5 @@
 
-from .models import Category, Pill, Product, ProductImage
+from .models import Category, Pill, Product, ProductImage, SpinWheelDiscount, SpinWheelResult
 from django_filters import rest_framework as filters
 from django.db.models import Q, F, FloatField, Case, When,Exists, OuterRef
 from django.utils import timezone
@@ -158,5 +158,24 @@ class PillFilter(filters.FilterSet):
         
         
         
-        
-        
+
+
+
+class SpinWheelResultFilter(filters.FilterSet):
+    start_date = filters.DateTimeFilter(field_name='spin_date_time', lookup_expr='gte')
+    end_date = filters.DateTimeFilter(field_name='spin_date_time', lookup_expr='lte')
+    spin_wheel = filters.ModelChoiceFilter(queryset=SpinWheelDiscount.objects.all())
+    won = filters.BooleanFilter(method='filter_won')
+    coupon_used = filters.BooleanFilter(method='filter_coupon_used')
+
+    class Meta:
+        model = SpinWheelResult
+        fields = ['start_date', 'end_date', 'spin_wheel', 'won', 'coupon_used']
+
+    def filter_won(self, queryset, name, value):
+        return queryset.filter(coupon__isnull=not value)
+
+    def filter_coupon_used(self, queryset, name, value):
+        if value:
+            return queryset.filter(coupon__isnull=False, coupon__used_times__gt=0)
+        return queryset.filter(Q(coupon__isnull=True) | Q(coupon__used_times=0))

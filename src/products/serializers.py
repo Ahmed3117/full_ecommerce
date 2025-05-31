@@ -9,7 +9,7 @@ from accounts.models import User
 from .models import (
     Category, CouponDiscount, Discount, LovedProduct, PayRequest, PillAddress,
     PillItem, PillStatusLog, PriceDropAlert, ProductDescription, Shipping,
-    SpecialProduct, SpinWheelDiscount, SpinWheelResult, StockAlert,
+    SpecialProduct, SpinWheelDiscount, SpinWheelResult, SpinWheelSettings, StockAlert,
     SubCategory, Brand, Product, ProductImage, ProductAvailability, Rating, Color, Pill
 )
 
@@ -791,23 +791,52 @@ class PriceDropAlertSerializer(serializers.ModelSerializer):
         return value
 
 class SpinWheelDiscountSerializer(serializers.ModelSerializer):
+    winner_count = serializers.SerializerMethodField()
+
     class Meta:
         model = SpinWheelDiscount
-        fields = ['id', 'name', 'discount_value', 'probability', 'daily_spin_limit', 'min_order_value', 'start_date', 'end_date', 'is_active']
-        read_only_fields = ['id']
+        fields = ['id', 'name', 'discount_value', 'probability', 'min_order_value', 'max_winners', 'winner_count', 'start_date', 'end_date', 'is_active']
+        read_only_fields = ['id', 'winner_count']
 
     def validate(self, data):
-        if data['start_date'] >= data['end_date']:
+        # Provide default for max_winners if not in data
+        max_winners = data.get('max_winners', 100)  # Matches model default
+        start_date = data.get('start_date')
+        end_date = data.get('end_date')
+        probability = data.get('probability', 0.1)  # Matches model default
+        min_order_value = data.get('min_order_value', 0)  # Matches model default
+
+        if start_date and end_date and start_date >= end_date:
             raise serializers.ValidationError("End date must be after start date.")
-        if data['probability'] < 0 or data['probability'] > 1:
+        if probability < 0 or probability > 1:
             raise serializers.ValidationError("Probability must be between 0 and 1.")
-        if data['daily_spin_limit'] <= 0:
-            raise serializers.ValidationError("Daily spin limit must be positive.")
-        if data['min_order_value'] < 0:
+        if min_order_value < 0:
             raise serializers.ValidationError("Minimum order value cannot be negative.")
+        if max_winners <= 0:
+            raise serializers.ValidationError("Maximum winners must be positive.")
+
         return data
 
+    def get_winner_count(self, obj):
+        return obj.winner_count()
+
 class SpinWheelResultSerializer(serializers.ModelSerializer):
+    coupon = CouponDiscountSerializer(read_only=True)
+
     class Meta:
         model = SpinWheelResult
-        fields = ['id', 'user', 'spin_wheel', 'spin_date']
+        fields = ['id', 'user', 'spin_wheel', 'coupon', 'spin_date_time']
+        read_only_fields = ['id', 'user', 'spin_date_time', 'coupon']
+
+
+class SpinWheelSettingsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SpinWheelSettings
+        fields = ['daily_spin_limit', 'updated_at']
+        read_only_fields = ['updated_at']
+
+    def validate_daily_spin_limit(self, value):
+        if value <= 0:
+            raise serializers.ValidationError("Daily spin limit must be positive.")
+        return value
+

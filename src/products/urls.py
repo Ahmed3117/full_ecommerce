@@ -77,5 +77,6 @@ urlpatterns = [
     path('dashboard/pay-requests/<int:id>/apply/', views.ApplyPayRequestView.as_view(), name='admin-pay-request-apply'),
     path('dashboard/spin-wheel/', views.SpinWheelDiscountListCreateView.as_view(), name='spin-wheel-list-create'),
     path('dashboard/spin-wheel/<int:pk>/', views.SpinWheelDiscountRetrieveUpdateDestroyView.as_view(), name='spin-wheel-detail'),
+    path('dashboard/spin-wheel-settings/', views.SpinWheelSettingsView.as_view(), name='spin-wheel-settings'),
 
 ]

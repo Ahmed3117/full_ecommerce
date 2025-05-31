@@ -13,7 +13,7 @@ from rest_framework.permissions import IsAuthenticated, IsAdminUser, AllowAny
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.views import APIView
 from .serializers import *
-from .filters import CategoryFilter, CouponDiscountFilter, PillFilter, ProductFilter
+from .filters import CategoryFilter, CouponDiscountFilter, PillFilter, ProductFilter, SpinWheelResultFilter
 from .models import (
     Category, Color, CouponDiscount, PillAddress, ProductAvailability,
     ProductImage, ProductSales, Rating, Shipping, SubCategory, Brand, Product, Pill,
@@ -488,84 +488,123 @@ class SpinWheelView(APIView):
 
     def get(self, request):
         now = timezone.now()
-        spin_wheel = SpinWheelDiscount.objects.filter(
+        spin_wheels = SpinWheelDiscount.objects.filter(
             is_active=True,
             start_date__lte=now,
             end_date__gte=now
-        ).first()
-        if not spin_wheel:
+        )
+        if not spin_wheels.exists():
             return Response(
-                {"error": "No active spin wheel available"},
+                {"error": "No active spin wheels available"},
                 status=status.HTTP_404_NOT_FOUND
             )
+        settings = SpinWheelSettings.get_settings()
         today = now.date()
         spins_today = SpinWheelResult.objects.filter(
             user=request.user,
-            spin_wheel=spin_wheel,
-            spin_date__date=today
+            spin_date_time__date=today
         ).count()
-        remaining_spins = max(0, spin_wheel.daily_spin_limit - spins_today)
+        remaining_spins = max(0, settings.daily_spin_limit - spins_today)
+        serializer = SpinWheelDiscountSerializer(spin_wheels, many=True)
         return Response({
-            **SpinWheelDiscountSerializer(spin_wheel).data,
+            "spin_wheels": serializer.data,
+            "daily_spin_limit": settings.daily_spin_limit,
             "remaining_spins": remaining_spins
         })
 
     def post(self, request):
         now = timezone.now()
-        spin_wheel = SpinWheelDiscount.objects.filter(
-            is_active=True,
-            start_date__lte=now,
-            end_date__gte=now
-        ).first()
-        if not spin_wheel:
-            return Response(
-                {"error": "No active spin wheel available"},
-                status=status.HTTP_404_NOT_FOUND
-            )
+        settings = SpinWheelSettings.get_settings()
         today = now.date()
+
+        # Check daily spin limit
         spins_today = SpinWheelResult.objects.filter(
             user=request.user,
-            spin_wheel=spin_wheel,
-            spin_date__date=today
+            spin_date_time__date=today
         ).count()
-        if spins_today >= spin_wheel.daily_spin_limit:
+        if spins_today >= settings.daily_spin_limit:
             return Response(
                 {"error": "Daily spin limit reached"},
                 status=status.HTTP_400_BAD_REQUEST
             )
+
+        # Check if user has already won today
+        won_today = SpinWheelResult.objects.filter(
+            user=request.user,
+            spin_date_time__date=today,
+            coupon__isnull=False
+        ).exists()
+        if won_today:
+            return Response(
+                {"error": "You can only win once per day"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Get available spin wheels
+        available_spin_wheels = SpinWheelDiscount.objects.filter(
+            is_active=True,
+            start_date__lte=now,
+            end_date__gte=now
+        ).annotate(
+            current_winners=Count('spinwheelresult', filter=Q(spinwheelresult__coupon__isnull=False))
+        ).filter(
+            current_winners__lt=F('max_winners')
+        )
+        if not available_spin_wheels.exists():
+            return Response(
+                {"error": "No available spin wheels with remaining winner slots"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
         with transaction.atomic():
+            # Select a spin wheel based on probabilities
+            total_probability = sum(wheel.probability for wheel in available_spin_wheels)
+            if total_probability == 0:
+                selected_wheel = random.choice(available_spin_wheels)
+            else:
+                weights = [wheel.probability / total_probability for wheel in available_spin_wheels]
+                selected_wheel = random.choices(available_spin_wheels, weights=weights, k=1)[0]
+
+            # Create spin result
             result = SpinWheelResult.objects.create(
                 user=request.user,
-                spin_wheel=spin_wheel
+                spin_wheel=selected_wheel
             )
-            won = random.random() < spin_wheel.probability
+
+            # Determine if user wins
+            won = random.random() < selected_wheel.probability
             coupon = None
             if won:
                 coupon = CouponDiscount.objects.create(
-                    discount_value=spin_wheel.discount_value,
+                    discount_value=selected_wheel.discount_value,
                     coupon_start=now,
-                    coupon_end=now + timedelta(days=30),  # Default 30-day validity
+                    coupon_end=now + timedelta(days=30),
                     available_use_times=1,
                     is_wheel_coupon=True,
                     user=request.user,
-                    min_order_value=spin_wheel.min_order_value
+                    min_order_value=selected_wheel.min_order_value
                 )
+                result.coupon = coupon
+                result.save()
+
         return Response({
             'id': result.id,
             'user': result.user.id,
-            'spin_wheel': result.spin_wheel.id,
-            'spin_date': result.spin_date,
-            'won': won,
-            'coupon': CouponDiscountSerializer(coupon).data if coupon else None
+            'spin_wheel': SpinWheelDiscountSerializer(selected_wheel).data,
+            'coupon': CouponDiscountSerializer(coupon).data if coupon else None,
+            'spin_date_time': result.spin_date_time,
+            'won': won
         })
 
 class SpinWheelHistoryView(generics.ListAPIView):
     serializer_class = SpinWheelResultSerializer
     permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend]
+    filterset_class = SpinWheelResultFilter
 
     def get_queryset(self):
-        return SpinWheelResult.objects.filter(user=self.request.user).order_by('-spin_date')
-
+        return SpinWheelResult.objects.filter(user=self.request.user).order_by('-spin_date_time')
+    
 class UserSpinWheelCouponsView(generics.ListAPIView):
     serializer_class = CouponDiscountSerializer
     permission_classes = [IsAuthenticated]
@@ -841,6 +880,22 @@ class SpinWheelDiscountRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyA
     queryset = SpinWheelDiscount.objects.all()
     serializer_class = SpinWheelDiscountSerializer
     # permission_classes = [IsAdminUser]
+
+class SpinWheelSettingsView(APIView):
+    # permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        settings = SpinWheelSettings.get_settings()
+        serializer = SpinWheelSettingsSerializer(settings)
+        return Response(serializer.data)
+
+    def patch(self, request):
+        settings = SpinWheelSettings.get_settings()
+        serializer = SpinWheelSettingsSerializer(settings, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class AdminPayRequestCreateView(generics.CreateAPIView):
     queryset = PayRequest.objects.all()

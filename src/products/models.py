@@ -578,33 +578,62 @@ class SpinWheelDiscount(models.Model):
         help_text="Probability of winning (0 to 1)"
     )
     is_active = models.BooleanField(default=True)
-    daily_spin_limit = models.PositiveIntegerField(
-        default=1,
-        help_text="Maximum spins per user per day"
-    )
     start_date = models.DateTimeField()
     end_date = models.DateTimeField()
     min_order_value = models.FloatField(
         default=0,
         help_text="Minimum order value to claim the prize"
     )
+    max_winners = models.PositiveIntegerField(
+        default=100,
+        help_text="Maximum number of users who can win this discount"
+    )
 
     def __str__(self):
-        return self.name
+        return f"{self.name} (Winners: {self.winner_count()}/{self.max_winners})"
 
     def is_available(self):
         now = timezone.now()
-        return (self.is_active and 
-                self.start_date <= now <= self.end_date)
+        return (
+            self.is_active and
+            self.start_date <= now <= self.end_date and
+            self.winner_count() < self.max_winners
+        )
+
+    def winner_count(self):
+        return SpinWheelResult.objects.filter(spin_wheel=self, coupon__isnull=False).count()
 
 class SpinWheelResult(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     spin_wheel = models.ForeignKey(SpinWheelDiscount, on_delete=models.CASCADE)
-    spin_date = models.DateTimeField(auto_now_add=True)
+    coupon = models.ForeignKey(CouponDiscount, null=True, blank=True, on_delete=models.SET_NULL)
+    spin_date_time = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        unique_together = [['user', 'spin_wheel', 'spin_date']]
+        unique_together = ['user', 'spin_wheel', 'spin_date_time']
+        ordering = ['-spin_date_time']
 
+    def __str__(self):
+        return f"{self.user.username} spun {self.spin_wheel.name} on {self.spin_date_time}"
+
+class SpinWheelSettings(models.Model):
+    daily_spin_limit = models.PositiveIntegerField(
+        default=1,
+        help_text="Maximum spins per user per day"
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Spin Wheel Settings"
+        verbose_name_plural = "Spin Wheel Settings"
+
+    def __str__(self):
+        return f"Daily Spin Limit: {self.daily_spin_limit}"
+
+    @classmethod
+    def get_settings(cls):
+        return cls.objects.first() or cls.objects.create()
+    
 def prepare_whatsapp_message(phone_number, pill):
     print(f"Preparing WhatsApp message for phone number: {phone_number}")
     message = (

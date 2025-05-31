@@ -1,7 +1,7 @@
 
 from django.contrib import admin
 from .models import (
-    Category, PayRequest, PillItem, PriceDropAlert, ProductSales, SpecialProduct, SpinWheelDiscount, SpinWheelResult, StockAlert, SubCategory, Brand, Product, ProductImage, 
+    Category, PayRequest, PillItem, PriceDropAlert, ProductSales, SpecialProduct, SpinWheelDiscount, SpinWheelResult, SpinWheelSettings, StockAlert, SubCategory, Brand, Product, ProductImage, 
     Color, ProductAvailability, Rating, Shipping, Pill, Discount,
     CouponDiscount, PillAddress
 )
@@ -155,7 +155,7 @@ class CouponDiscountAdmin(admin.ModelAdmin):
     readonly_fields = ['coupon']
     list_filter = ['coupon_start', 'coupon_end', 'is_wheel_coupon', 'user']
     search_fields = ['coupon', 'user__username']
-    
+
 # PillAddress admin
 @admin.register(PillAddress)
 class PillAddressAdmin(admin.ModelAdmin):
@@ -190,15 +190,30 @@ class PriceDropAlertAdmin(admin.ModelAdmin):
 
 @admin.register(SpinWheelDiscount)
 class SpinWheelDiscountAdmin(admin.ModelAdmin):
-    list_display = ['name', 'discount_value', 'probability', 'min_order_value', 'is_active', 'start_date', 'end_date']
+    list_display = ['id', 'name', 'discount_value', 'probability', 'min_order_value', 'max_winners', 'winner_count', 'is_active', 'start_date', 'end_date']
     list_filter = ['is_active', 'start_date', 'end_date']
     search_fields = ['name']
 
+    def winner_count(self, obj):
+        return obj.winner_count()
+    winner_count.short_description = 'Current Winners'
+
 @admin.register(SpinWheelResult)
 class SpinWheelResultAdmin(admin.ModelAdmin):
-    list_display = ['user', 'spin_wheel', 'spin_date']
-    list_filter = ['spin_wheel', 'spin_date']
-    search_fields = ['user__username', 'spin_wheel__name']
+    list_display = ['user', 'spin_wheel', 'coupon', 'spin_date_time']
+    list_filter = ['spin_wheel', 'spin_date_time']
+    search_fields = ['user__username', 'spin_wheel__name', 'coupon__coupon']
+
+@admin.register(SpinWheelSettings)
+class SpinWheelSettingsAdmin(admin.ModelAdmin):
+    list_display = ['daily_spin_limit', 'updated_at']
+    fields = ['daily_spin_limit']
+
+    def has_add_permission(self, request):
+        return not SpinWheelSettings.objects.exists()  
+
+    def has_delete_permission(self, request, obj=None):
+        return False 
 
 @admin.register(SpecialProduct)
 class SpecialProductAdmin(admin.ModelAdmin):
@@ -216,4 +231,7 @@ class SpecialProductAdmin(admin.ModelAdmin):
             'classes': ('collapse',)
         }),
     )
+
+
+
 
