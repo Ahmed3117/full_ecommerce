@@ -76,12 +76,10 @@ class User(AbstractUser):
         blank=True,
         related_name='users'
     )
+    created_at = models.DateTimeField(auto_now_add=True,null=True, blank=True)
 
     def __str__(self):
         return self.name if self.name else self.username
-
-
-
 
 
 class UserAddress(models.Model):

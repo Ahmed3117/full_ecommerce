@@ -7,7 +7,7 @@ from django.db.models import Sum
 from django.db import transaction
 from accounts.models import User
 from .models import (
-    Category, CouponDiscount, Discount, LovedProduct, PayRequest, PillAddress,
+    Category, CouponDiscount, Discount, LovedProduct, PayRequest, PillAddress, PillGift,
     PillItem, PillStatusLog, PriceDropAlert, ProductDescription, Shipping,
     SpecialProduct, SpinWheelDiscount, SpinWheelResult, SpinWheelSettings, StockAlert,
     SubCategory, Brand, Product, ProductImage, ProductAvailability, Rating, Color, Pill
@@ -157,7 +157,7 @@ class ProductSerializer(serializers.ModelSerializer):
             'brand_id', 'brand_name', 'price', 'description', 'date_added', 'discounted_price',
             'has_discount', 'current_discount', 'discount_expiry', 'main_image', 'images', 'number_of_ratings',
             'average_rating', 'total_quantity', 'available_colors', 'available_sizes', 'availabilities',
-            'descriptions', 'threshold', 'is_low_stock', 'is_important'
+            'descriptions', 'threshold', 'is_low_stock', 'is_important','base_image'
         ]
 
     def get_category_id(self, obj):
@@ -242,10 +242,10 @@ class ProductSerializer(serializers.ModelSerializer):
         if main_image:
             request = self.context.get('request')
             if request:
-                return request.build_absolute_uri(main_image.image.url)
+                return request.build_absolute_uri(main_image.url)
             else:
                 base_url = ""
-                return urljoin(base_url, main_image.image.url)
+                return urljoin(base_url, main_image.url)
         return None
 
     def get_number_of_ratings(self, obj):
@@ -687,26 +687,59 @@ class CouponDiscountSerializer(serializers.ModelSerializer):
     def get_is_available(self, obj):
         return obj.available_use_times > 0 and self.get_is_active(obj)
 
+class PillGiftSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PillGift
+        fields = ['id', 'discount_value', 'start_date', 'end_date', 'is_active', 'min_order_value', 'max_order_value']
+        read_only_fields = ['id']
+
+    def validate(self, data):
+        # Both dates can't be null
+        if data.get('start_date') is None and data.get('end_date') is None:
+            raise serializers.ValidationError("At least one of start_date or end_date must be provided.")
+            
+        # If both dates are provided, end must be after start
+        if data.get('start_date') and data.get('end_date'):
+            if data['start_date'] >= data['end_date']:
+                raise serializers.ValidationError("End date must be after start date.")
+                
+        if data['discount_value'] < 0 or data['discount_value'] > 100:
+            raise serializers.ValidationError("Discount value must be between 0 and 100.")
+            
+        if data['min_order_value'] < 0:
+            raise serializers.ValidationError("Minimum order value cannot be negative.")
+            
+        if data.get('max_order_value') and data['max_order_value'] < data['min_order_value']:
+            raise serializers.ValidationError("Maximum order value cannot be less than minimum order value.")
+            
+        return data
+
 class PillDetailSerializer(serializers.ModelSerializer):
     items = PillItemSerializer(many=True, read_only=True)
     coupon = CouponDiscountSerializer(read_only=True)
     pilladdress = PillAddressSerializer(read_only=True)
+    gift_discount = PillGiftSerializer(read_only=True)
     shipping_price = serializers.SerializerMethodField()
     status_display = serializers.SerializerMethodField()
     user_name = serializers.SerializerMethodField()
     user_username = serializers.SerializerMethodField()
     status_logs = PillStatusLogSerializer(many=True, read_only=True)
     pay_requests = PayRequestSerializer(many=True, read_only=True)
+    price_without_coupons_or_gifts = serializers.SerializerMethodField()
+    coupon_discount = serializers.SerializerMethodField()
+    gift_discount = serializers.SerializerMethodField()
     final_price = serializers.SerializerMethodField()
 
     class Meta:
         model = Pill
         fields = [
-            'id', 'user_name', 'user_username', 'items', 'status', 'status_display', 'date_added', 'paid', 'coupon', 'pilladdress',
-            'price_without_coupons', 'coupon_discount', 'price_after_coupon_discount',
-            'shipping_price', 'final_price', 'status_logs', 'pay_requests'
+            'id', 'user_name', 'user_username', 'items', 'status', 'status_display', 'date_added', 'paid', 'coupon', 'pilladdress', 'gift_discount',
+            'price_without_coupons_or_gifts', 'coupon_discount', 'gift_discount', 'shipping_price', 'final_price', 'status_logs', 'pay_requests'
         ]
-        read_only_fields = ['date_added', 'price_without_coupons', 'coupon_discount', 'price_after_coupon_discount', 'shipping_price', 'final_price']
+        read_only_fields = [
+            'id', 'user_name', 'user_username', 'items', 'status', 'status_display', 'date_added', 'paid', 'coupon', 'pilladdress', 'gift_discount',
+            'price_without_coupons_or_gifts', 'coupon_discount', 'gift_discount', 'shipping_price', 'final_price', 'status_logs', 'pay_requests'
+        ]
 
     def get_user_name(self, obj):
         return obj.user.name
@@ -720,8 +753,17 @@ class PillDetailSerializer(serializers.ModelSerializer):
     def get_status_display(self, obj):
         return obj.get_status_display()
     
+    def get_price_without_coupons_or_gifts(self, obj):
+        return obj.price_without_coupons_or_gifts()
+
+    def get_coupon_discount(self, obj):
+        return obj.calculate_coupon_discount()
+
+    def get_gift_discount(self, obj):
+        return obj.calculate_gift_discount()
+
     def get_final_price(self, obj):
-        return obj.price_after_coupon_discount() + obj.shipping_price()
+        return obj.final_price()
 
 class DiscountSerializer(serializers.ModelSerializer):
     product_name = serializers.SerializerMethodField()
@@ -839,4 +881,6 @@ class SpinWheelSettingsSerializer(serializers.ModelSerializer):
         if value <= 0:
             raise serializers.ValidationError("Daily spin limit must be positive.")
         return value
+
+
 

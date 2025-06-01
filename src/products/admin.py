@@ -1,7 +1,7 @@
 
 from django.contrib import admin
 from .models import (
-    Category, PayRequest, PillItem, PriceDropAlert, ProductSales, SpecialProduct, SpinWheelDiscount, SpinWheelResult, SpinWheelSettings, StockAlert, SubCategory, Brand, Product, ProductImage, 
+    Category, PayRequest, PillGift, PillItem, PriceDropAlert, ProductSales, SpecialProduct, SpinWheelDiscount, SpinWheelResult, SpinWheelSettings, StockAlert, SubCategory, Brand, Product, ProductImage, 
     Color, ProductAvailability, Rating, Shipping, Pill, Discount,
     CouponDiscount, PillAddress
 )
@@ -232,6 +232,10 @@ class SpecialProductAdmin(admin.ModelAdmin):
         }),
     )
 
-
+@admin.register(PillGift)
+class PillGiftAdmin(admin.ModelAdmin):
+    list_display = ['discount_value', 'start_date', 'end_date', 'is_active', 'min_order_value', 'max_order_value']
+    list_filter = ['is_active', 'start_date', 'end_date']
+    search_fields = ['discount_value', 'min_order_value', 'max_order_value']
 
 

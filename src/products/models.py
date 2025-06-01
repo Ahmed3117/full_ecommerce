@@ -116,6 +116,12 @@ class Product(models.Model):
         help_text="Mark if this product is important/special"
     )
     date_added = models.DateTimeField(auto_now_add=True)
+    base_image = models.ImageField(
+        upload_to='products/',
+        null=True,
+        blank=True,
+        help_text="Main image for the product"
+    )
 
     def get_current_discount(self):
         """Returns the best active discount (either product or category level)"""
@@ -161,6 +167,8 @@ class Product(models.Model):
         return self.get_current_discount() is not None
 
     def main_image(self):
+        if self.base_image:
+            return self.base_image
         images = self.images.all()
         if images.exists():
             return random.choice(images)
@@ -334,7 +342,8 @@ class Pill(models.Model):
     date_added = models.DateTimeField(auto_now_add=True)
     paid = models.BooleanField(default=False)
     coupon = models.ForeignKey('CouponDiscount', on_delete=models.SET_NULL, null=True, blank=True, related_name='pills')
-    coupon_discount = models.FloatField(default=0.0)
+    coupon_discount = models.FloatField(default=0.0)  # Stores discount amount
+    gift_discount = models.ForeignKey('PillGift', on_delete=models.SET_NULL, null=True, blank=True, related_name='pills')
     pill_number = models.CharField(
         max_length=20,
         editable=False,
@@ -351,6 +360,7 @@ class Pill(models.Model):
         if is_new:
             PillStatusLog.objects.create(pill=self, status=self.status)
             self.items.update(status=self.status)
+            self.apply_gift_discount()
         else:
             if old_status != self.status:
                 status_log, created = PillStatusLog.objects.get_or_create(
@@ -361,6 +371,8 @@ class Pill(models.Model):
                     status_log.changed_at = timezone.now()
                     status_log.save()
                 self.items.update(status=self.status)
+                if self.status != 'd' and not self.paid:
+                    self.apply_gift_discount()
             if old_status != 'd' and self.status == 'd':
                 self.process_delivery()
         if self.paid and self.status != 'p':
@@ -401,18 +413,20 @@ class Pill(models.Model):
     def __str__(self):
         return f"Pill ID: {self.id} - Status: {self.get_status_display()} - Date: {self.date_added}"
 
-    def price_without_coupons(self):
+    def price_without_coupons_or_gifts(self):
         return sum(item.product.discounted_price() * item.quantity for item in self.items.all())
 
     def calculate_coupon_discount(self):
         if self.coupon:
             now = timezone.now()
             if self.coupon.coupon_start <= now <= self.coupon.coupon_end:
-                return self.coupon.discount_value
+                return self.price_without_coupons_or_gifts() * (self.coupon.discount_value / 100)
         return 0.0
 
-    def price_after_coupon_discount(self):
-        return self.price_without_coupons() - (self.coupon_discount or 0)
+    def calculate_gift_discount(self):
+        if self.gift_discount and self.gift_discount.is_available(self.price_without_coupons_or_gifts()):
+            return self.price_without_coupons_or_gifts() * (self.gift_discount.discount_value / 100)
+        return 0.0
 
     def shipping_price(self):
         if hasattr(self, 'pilladdress'):
@@ -424,7 +438,50 @@ class Pill(models.Model):
         return 0.0
 
     def final_price(self):
-        return self.price_after_coupon_discount() + self.shipping_price()
+        base_price = self.price_without_coupons_or_gifts()
+        gift_discount = self.calculate_gift_discount()
+        coupon_discount = self.calculate_coupon_discount()
+        return max(0, base_price - gift_discount - coupon_discount) + self.shipping_price()
+
+    def apply_gift_discount(self):
+        """Apply the best active PillGift discount based on total price."""
+        if self.paid or self.status == 'd':
+            self.gift_discount = None
+            self.save()
+            return None
+
+        # Calculate total price from items
+        total = self.price_without_coupons_or_gifts()
+        if total <= 0:
+            self.gift_discount = None
+            self.save()
+            return None
+
+        # Find applicable gifts
+        applicable_gifts = PillGift.objects.filter(
+            is_active=True,
+            min_order_value__lte=total
+        ).filter(
+            models.Q(max_order_value__isnull=True) | models.Q(max_order_value__gte=total)
+        ).filter(
+            models.Q(start_date__isnull=True) | models.Q(start_date__lte=timezone.now())
+        ).filter(
+            models.Q(end_date__isnull=True) | models.Q(end_date__gte=timezone.now())
+        ).order_by('-discount_value', '-id')
+
+        # Check current gift availability
+        if self.gift_discount and not self.gift_discount.is_available(total):
+            self.gift_discount = None
+
+        # Apply best gift
+        gift = applicable_gifts.first()
+        if gift:
+            self.gift_discount = gift
+            self.save()
+            return gift
+        if not self.gift_discount:
+            self.save()
+        return None
 
 class PillAddress(models.Model):
     pill = models.OneToOneField(Pill, on_delete=models.CASCADE, related_name='pilladdress')
@@ -633,7 +690,58 @@ class SpinWheelSettings(models.Model):
     @classmethod
     def get_settings(cls):
         return cls.objects.first() or cls.objects.create()
-    
+
+class PillGift(models.Model):
+    discount_value = models.FloatField(
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
+        help_text="Discount percentage (0-100)"
+    )
+    start_date = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Start date the gift becomes available (null means always available until end_date)"
+    )
+    end_date = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="End date of the gift (null means available indefinitely from start_date)"
+    )
+    is_active = models.BooleanField(default=True)
+    min_order_value = models.FloatField(
+        default=0,
+        validators=[MinValueValidator(0)],
+        help_text="Minimum order value to apply the gift"
+    )
+    max_order_value = models.FloatField(
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(0)],
+        help_text="Maximum order value to apply the gift (optional)"
+    )
+
+    class Meta:
+        verbose_name = "Pill Gift"
+        verbose_name_plural = "Pill Gifts"
+
+    def __str__(self):
+        start_str = self.start_date.strftime("%Y-%m-%d") if self.start_date else "Any"
+        end_str = self.end_date.strftime("%Y-%m-%d") if self.end_date else "Forever"
+        return f"{self.discount_value}% Gift ({start_str} to {end_str})"
+
+    def is_available(self, order_value):
+        now = timezone.now()
+        if not self.is_active:
+            return False
+        if self.start_date and now < self.start_date:
+            return False
+        if self.end_date and now > self.end_date:
+            return False
+        if order_value < self.min_order_value:
+            return False
+        if self.max_order_value and order_value > self.max_order_value:
+            return False
+        return True
+
 def prepare_whatsapp_message(phone_number, pill):
     print(f"Preparing WhatsApp message for phone number: {phone_number}")
     message = (

@@ -1,10 +1,11 @@
 from django.db.models import Count, Sum, F
 from rest_framework import serializers
 
-from products.models import LovedProduct, Pill, Product
+from products.models import PILL_STATUS_CHOICES, LovedProduct, Pill, Product
 from products.serializers import LovedProductSerializer, PillDetailSerializer
 from .models import User, UserAddress, UserProfileImage
-
+from django.db.models import Count, Sum, Case, When, Value, FloatField
+from django.db.models.functions import Coalesce
 class UserProfileImageSerializer(serializers.ModelSerializer):
     class Meta:
         model = UserProfileImage
@@ -24,6 +25,11 @@ class UserSerializer(serializers.ModelSerializer):
         required=False,
         allow_null=True
     )
+    cart_items_count = serializers.SerializerMethodField()
+    last_cart_added = serializers.SerializerMethodField()
+    loved_count = serializers.SerializerMethodField()
+    pill_stats = serializers.SerializerMethodField()
+    financial_summary = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -31,7 +37,9 @@ class UserSerializer(serializers.ModelSerializer):
             'id', 'username', 'email', 'password', 'name','government', 'city',
             'is_staff', 'is_superuser', 'user_type', 'phone',
             'year', 'address', 'user_profile_image',
-            'user_profile_image_id'
+            'user_profile_image_id','created_at', 
+            'cart_items_count', 'last_cart_added',
+            'loved_count', 'pill_stats', 'financial_summary'
         )
         extra_kwargs = {
             'is_staff': {'read_only': True},
@@ -41,6 +49,48 @@ class UserSerializer(serializers.ModelSerializer):
             'phone': {'required': False, 'allow_null': True, 'allow_blank': True},
             'year': {'required': False, 'allow_null': True},
             'address': {'required': False, 'allow_null': True, 'allow_blank': True},
+        }
+    
+    def get_cart_items_count(self, obj):
+        from products.models import PillItem
+        return PillItem.objects.filter(user=obj, status__isnull=True).count()
+    
+    def get_last_cart_added(self, obj):
+        from products.models import PillItem
+        last_item = PillItem.objects.filter(
+            user=obj, 
+            status__isnull=True
+        ).order_by('-date_added').first()
+        return last_item.date_added if last_item else None
+    
+    def get_loved_count(self, obj):
+        return obj.loved_products.count()
+    
+    def get_pill_stats(self, obj):
+        status_counts = {status[0]: 0 for status in PILL_STATUS_CHOICES}
+        for status, count in obj.pills.values_list('status').annotate(
+            count=Count('id')
+        ):
+            status_counts[status] = count
+        return {
+            'total': sum(status_counts.values()),
+            'by_status': status_counts
+        }
+    
+    def get_financial_summary(self, obj):
+        paid = 0
+        pending = 0
+        
+        for pill in obj.pills.all():
+            if pill.status == 'd':
+                paid += pill.final_price()
+            elif pill.status not in ['r', 'c']:
+                pending += pill.final_price()
+        
+        return {
+            'total_paid': paid,
+            'total_pending': pending,
+            'all_time_total': paid + pending
         }
 
     # def validate(self, data):
@@ -72,6 +122,62 @@ class UserSerializer(serializers.ModelSerializer):
         return user
 
 
+# class UserListSerializer(serializers.ModelSerializer):
+#     cart_items_count = serializers.SerializerMethodField()
+#     last_cart_added = serializers.SerializerMethodField()
+#     loved_count = serializers.SerializerMethodField()
+#     pill_stats = serializers.SerializerMethodField()
+#     financial_summary = serializers.SerializerMethodField()
+    
+#     class Meta:
+#         model = User
+#         fields = [
+#             'id', 'username', 'name', 'email', 'phone', 'user_type', 
+#             'created_at', 'cart_items_count', 'last_cart_added',
+#             'loved_count', 'pill_stats', 'financial_summary'
+#         ]
+    
+#     def get_cart_items_count(self, obj):
+#         from products.models import PillItem
+#         return PillItem.objects.filter(user=obj, status__isnull=True).count()
+    
+#     def get_last_cart_added(self, obj):
+#         from products.models import PillItem
+#         last_item = PillItem.objects.filter(
+#             user=obj, 
+#             status__isnull=True
+#         ).order_by('-date_added').first()
+#         return last_item.date_added if last_item else None
+    
+#     def get_loved_count(self, obj):
+#         return obj.loved_products.count()
+    
+#     def get_pill_stats(self, obj):
+#         status_counts = {status[0]: 0 for status in PILL_STATUS_CHOICES}
+#         for status, count in obj.pills.values_list('status').annotate(
+#             count=Count('id')
+#         ):
+#             status_counts[status] = count
+#         return {
+#             'total': sum(status_counts.values()),
+#             'by_status': status_counts
+#         }
+    
+#     def get_financial_summary(self, obj):
+#         paid = 0
+#         pending = 0
+        
+#         for pill in obj.pills.all():
+#             if pill.status == 'd':
+#                 paid += pill.final_price()
+#             elif pill.status not in ['r', 'c']:
+#                 pending += pill.final_price()
+        
+#         return {
+#             'total_paid': paid,
+#             'total_pending': pending,
+#             'all_time_total': paid + pending
+#         }
 
 
 class PasswordResetRequestSerializer(serializers.Serializer):
@@ -146,4 +252,98 @@ class UserProfileSerializer(serializers.ModelSerializer):
         ).order_by('-count').first()
         return favorite['category__name'] if favorite else None
 
+class UserDetailSerializer(serializers.ModelSerializer):
+    addresses = UserAddressSerializer(many=True, read_only=True)
+    pill_stats = serializers.SerializerMethodField()
+    loved_products = serializers.SerializerMethodField()
+    financial_summary = serializers.SerializerMethodField()
+    user_profile_image = UserProfileImageSerializer(read_only=True)
+    cart_items = serializers.SerializerMethodField()
+    last_cart_added = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = User
+        fields = [
+            'id', 'username', 'name', 'email', 'phone', 'user_type', 'year',
+            'government', 'city', 'address', 'created_at', 'user_profile_image',
+            'addresses', 'pill_stats', 'loved_products', 'financial_summary',
+            'cart_items', 'last_cart_added' 
+        ]
 
+    
+    def get_pill_stats(self, obj):
+        status_counts = {status[0]: 0 for status in PILL_STATUS_CHOICES}
+        for status, count in obj.pills.values_list('status').annotate(
+            count=Count('id')
+        ):
+            status_counts[status] = count
+        
+        recent_pills = []
+        for pill in obj.pills.order_by('-date_added')[:5]:
+            recent_pills.append({
+                'id': pill.id,
+                'pill_number': pill.pill_number,
+                'status': pill.status,
+                'date_added': pill.date_added,
+                'final_price': pill.final_price()
+            })
+        
+        return {
+            'total': sum(status_counts.values()),
+            'by_status': status_counts,
+            'recent_pills': recent_pills
+        }
+    
+    def get_loved_products(self, obj):
+        return obj.loved_products.order_by('-created_at')[:10].values(
+            'id', 'product__name', 'created_at'
+        )
+    
+    def get_financial_summary(self, obj):
+        paid = 0
+        pending = 0
+        
+        for pill in obj.pills.all():
+            if pill.status == 'd':
+                paid += pill.final_price()
+            elif pill.status not in ['r', 'c']:
+                pending += pill.final_price()
+        
+        return {
+            'total_paid': paid,
+            'total_pending': pending,
+            'all_time_total': paid + pending
+        }
+
+    def get_cart_items(self, obj):
+        from products.models import PillItem
+        from products.serializers import PillItemSerializer
+        
+        cart_items = PillItem.objects.filter(
+            user=obj,
+            status__isnull=True
+        ).select_related('product', 'color')
+        
+        return PillItemSerializer(cart_items, many=True).data
+
+    def get_last_cart_added(self, obj):
+        from products.models import PillItem
+        
+        last_item = PillItem.objects.filter(
+            user=obj,
+            status__isnull=True
+        ).order_by('-date_added').first()
+        
+        return last_item.date_added if last_item else None
+
+
+
+
+{
+    "name": "Product 5",
+    "category": 1, 
+    "sub_category": 1, 
+    "brand": 1, 
+    "price":1000.0,
+    "description": "This is a samsdfson."
+}

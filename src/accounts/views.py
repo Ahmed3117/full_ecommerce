@@ -9,10 +9,12 @@ from django.core.mail import send_mail
 from django.utils import timezone
 from datetime import timedelta
 import random
-from .serializers import ChangePasswordSerializer, UserAddressSerializer, UserProfileImageCreateSerializer, UserProfileImageSerializer, UserProfileSerializer, UserSerializer, PasswordResetRequestSerializer, PasswordResetConfirmSerializer
+from .serializers import ChangePasswordSerializer, UserAddressSerializer, UserDetailSerializer, UserProfileImageCreateSerializer, UserProfileImageSerializer, UserProfileSerializer, UserSerializer, PasswordResetRequestSerializer, PasswordResetConfirmSerializer
 from .models import User, UserAddress, UserProfileImage
 from django.contrib.auth import update_session_auth_hash
 from rest_framework import generics
+from rest_framework.filters import SearchFilter, OrderingFilter
+from django.db.models import Count
 
 
 @api_view(['POST'])
@@ -191,7 +193,7 @@ def change_password(request):
 #^ ---------------------------------------------------- Dashboard ---------------------------- ^#
 
 @api_view(['POST'])
-@permission_classes([IsAdminUser])
+# @permission_classes([IsAdminUser])
 def create_admin_user(request):
     serializer = UserSerializer(data=request.data)
     if serializer.is_valid():
@@ -203,18 +205,6 @@ def create_admin_user(request):
             'user': serializer.data
         }, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
-class UserListView(generics.ListAPIView):
-    queryset = User.objects.all()
-    serializer_class = UserSerializer
-    permission_classes = [IsAdminUser] 
-    filterset_fields = ['is_staff','is_superuser']
-
-class UserRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = User.objects.all()
-    serializer_class = UserSerializer
-    permission_classes = [IsAdminUser] 
 
 
 class UserProfileImageListCreateView(generics.ListCreateAPIView):
@@ -230,5 +220,35 @@ class UserProfileImageRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAP
     queryset = UserProfileImage.objects.all()
     serializer_class = UserProfileImageSerializer
     # permission_classes = [IsAdminUser]
+
+
+# user analysis
+
+class AdminUserListView(generics.ListAPIView):
+    serializer_class = UserSerializer
+    # permission_classes = [IsAdminUser]
+    queryset = User.objects.prefetch_related(
+        'pills',
+        'loved_products'
+    ).order_by('-created_at')
+    
+    filter_backends = [SearchFilter, OrderingFilter]
+    ordering_fields = [
+        'created_at', 
+        'cart_items_count', 
+        'loved_count'
+    ]
+    search_fields = ['username', 'name', 'email', 'phone','address', 'government', 'city']
+    filterset_fields = ['is_staff', 'is_superuser','year', 'government']
+
+class AdminUserDetailView(generics.RetrieveAPIView):
+    serializer_class = UserDetailSerializer
+    # permission_classes = [IsAdminUser]
+    queryset = User.objects.all()
+    lookup_field = 'pk'
+
+
+
+
 
 

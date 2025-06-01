@@ -17,11 +17,13 @@ urlpatterns = [
     path('addresses/', views.UserAddressListCreateView.as_view(), name='user-address-list-create'),
     path('addresses/<int:pk>/', views.UserAddressRetrieveUpdateDestroyView.as_view(), name='user-address-detail'),
     #-----------------Admin--------------------------#
-    path('create-admin-user/', views.create_admin_user, name='create-admin-user'),
-    path('users/', views.UserListView.as_view(), name='user-list-create'),
-    path('users/<int:pk>/', views.UserRetrieveUpdateDestroyView.as_view(), name='user-retrieve-update-destroy'),
+    path('dashboard/create-admin-user/', views.create_admin_user, name='create-admin-user'),
     # User profile image 
-    path('profile-images/', views.UserProfileImageListCreateView.as_view(), name='profile-image-list'),
-    path('profile-images/<int:pk>/', views.UserProfileImageRetrieveUpdateDestroyView.as_view(), name='profile-image-detail'),
-
+    path('dashboard/profile-images/', views.UserProfileImageListCreateView.as_view(), name='profile-image-list'),
+    path('dashboard/profile-images/<int:pk>/', views.UserProfileImageRetrieveUpdateDestroyView.as_view(), name='profile-image-detail'),
+    # user analysis
+    path('dashboard/users/', views.AdminUserListView.as_view(), name='admin-user-list'),
+    path('dashboard/users/<int:pk>/', views.AdminUserDetailView.as_view(), name='admin-user-detail'),
 ]
+
+
