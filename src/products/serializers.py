@@ -242,10 +242,10 @@ class ProductSerializer(serializers.ModelSerializer):
         if main_image:
             request = self.context.get('request')
             if request:
-                return request.build_absolute_uri(main_image.url)
+                return request.build_absolute_uri(main_image)
             else:
                 base_url = ""
-                return urljoin(base_url, main_image.url)
+                return urljoin(base_url, main_image)
         return None
 
     def get_number_of_ratings(self, obj):

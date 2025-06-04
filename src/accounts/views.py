@@ -2,6 +2,7 @@ from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny,IsAuthenticated,IsAdminUser
+from django_filters.rest_framework import DjangoFilterBackend
 from django.contrib.auth import authenticate
 from accounts.utils import send_whatsapp_massage
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -232,7 +233,7 @@ class AdminUserListView(generics.ListAPIView):
         'loved_products'
     ).order_by('-created_at')
     
-    filter_backends = [SearchFilter, OrderingFilter]
+    filter_backends = [SearchFilter, OrderingFilter,DjangoFilterBackend]
     ordering_fields = [
         'created_at', 
         'cart_items_count', 

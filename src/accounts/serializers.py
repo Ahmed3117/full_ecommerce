@@ -338,12 +338,3 @@ class UserDetailSerializer(serializers.ModelSerializer):
 
 
 
-
-{
-    "name": "Product 5",
-    "category": 1, 
-    "sub_category": 1, 
-    "brand": 1, 
-    "price":1000.0,
-    "description": "This is a samsdfson."
-}
