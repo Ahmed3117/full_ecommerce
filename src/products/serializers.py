@@ -6,6 +6,7 @@ from django.utils import timezone
 from django.db.models import Sum
 from django.db import transaction
 from accounts.models import User
+from core import settings
 from .models import (
     Category, CouponDiscount, Discount, LovedProduct, PayRequest, PillAddress, PillGift,
     PillItem, PillStatusLog, PriceDropAlert, ProductDescription, Shipping,
@@ -239,14 +240,16 @@ class ProductSerializer(serializers.ModelSerializer):
 
     def get_main_image(self, obj):
         main_image = obj.main_image()
-        if main_image:
+        print(f"Main image type: {type(main_image)}")  # Debug output
+        if main_image and hasattr(main_image, 'url'):
+            print(f"Main image URL: {main_image.url}")  # Debug output
             request = self.context.get('request')
             if request:
-                return request.build_absolute_uri(main_image)
-            else:
-                base_url = ""
-                return urljoin(base_url, main_image)
+                return request.build_absolute_uri(main_image.url)
+            return main_image.url
         return None
+
+
 
     def get_number_of_ratings(self, obj):
         return obj.number_of_ratings()
