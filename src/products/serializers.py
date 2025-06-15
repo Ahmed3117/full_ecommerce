@@ -57,8 +57,6 @@ class BulkProductDescriptionSerializer(serializers.ListSerializer):
         descriptions = [ProductDescription(**item) for item in validated_data]
         return ProductDescription.objects.bulk_create(descriptions)
 
-
-
 class ProductImageSerializer(serializers.ModelSerializer):
     class Meta:
         model = ProductImage
@@ -331,22 +329,27 @@ class UserCartSerializer(serializers.ModelSerializer):
             return obj.product.discounted_price() * obj.quantity
         return 0
 
-    # ADDED: Method to calculate the maximum available quantity
-    def get_max_quantity(self, obj):
-        """Calculates the total available stock for the specific product variant (size/color)."""
-        if not obj.product:
+    def _get_max_quantity(self, product, size, color):
+        if not product:
             return 0
 
-        # Filter ProductAvailability based on the PillItem's product, size, and color
-        availabilities = ProductAvailability.objects.filter(
-            product=obj.product,
-            size=obj.size,
-            color=obj.color
-        )
+        filters = {
+            'product': product,
+            'size': size,
+        }
         
-        # Sum the quantity from all matching availability records
+        if color:
+            filters['color'] = color
+        else:
+            filters['color__isnull'] = True
+
+        availabilities = ProductAvailability.objects.filter(**filters)
         total_available = availabilities.aggregate(total=Sum('quantity'))['total'] or 0
         return total_available
+
+    # ADDED: Method to calculate the maximum available quantity
+    def get_max_quantity(self, obj):
+        return self._get_max_quantity(obj.product, obj.size, obj.color)
 
 
 class PillCouponApplySerializer(serializers.ModelSerializer):
@@ -449,30 +452,37 @@ class PillItemCreateUpdateSerializer(serializers.ModelSerializer):
             'max_quantity': {'read_only': True}
         }
 
+    def _get_max_quantity(self, product, size, color):
+        if not product:
+            return 0
+
+        filters = {'product': product}
+        
+        # Handle size (can be None)
+        if size is not None:
+            filters['size'] = size
+        else:
+            filters['size__isnull'] = True
+        
+        # Handle color (can be None)
+        if color is not None:
+            filters['color'] = color
+        else:
+            filters['color__isnull'] = True
+        
+        availabilities = ProductAvailability.objects.filter(**filters)
+        total_available = availabilities.aggregate(total=Sum('quantity'))['total'] or 0
+        return total_available
+
     def get_max_quantity(self, obj):
-        # For existing instances (update), use the instance
         if isinstance(obj, PillItem):
-            product = obj.product
-            size = obj.size
-            color = obj.color
-        # For new instances (create), get from validated data
+            return self._get_max_quantity(obj.product, obj.size, obj.color)
         else:
             product = self.validated_data.get('product')
             size = self.validated_data.get('size')
             color = self.validated_data.get('color')
-
-        if not product:
-            return 0
-
-        availabilities = ProductAvailability.objects.filter(
-            product=product,
-            size=size,
-            color=color
-        )
+            return self._get_max_quantity(product, size, color)
         
-        total_available = availabilities.aggregate(total=Sum('quantity'))['total'] or 0
-        return total_available
-
     def to_internal_value(self, data):
         # Handle case where frontend might send full objects instead of just IDs
         if isinstance(data.get('product'), dict):
@@ -537,18 +547,26 @@ class PillItemSerializer(serializers.ModelSerializer):
         model = PillItem
         fields = ['id', 'product', 'quantity', 'size', 'color', 'status', 'date_added', 'max_quantity']
 
-    def get_max_quantity(self, obj):
-        if not obj.product:
+    def _get_max_quantity(self, product, size, color):
+        if not product:
             return 0
 
-        availabilities = ProductAvailability.objects.filter(
-            product=obj.product,
-            size=obj.size,
-            color=obj.color
-        )
+        filters = {
+            'product': product,
+            'size': size,
+        }
         
+        if color:
+            filters['color'] = color
+        else:
+            filters['color__isnull'] = True
+
+        availabilities = ProductAvailability.objects.filter(**filters)
         total_available = availabilities.aggregate(total=Sum('quantity'))['total'] or 0
         return total_available
+
+    def get_max_quantity(self, obj):
+        return self._get_max_quantity(obj.product, obj.size, obj.color)
 
 
 class PillItemCreateSerializer(serializers.ModelSerializer):

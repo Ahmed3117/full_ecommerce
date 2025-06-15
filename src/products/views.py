@@ -16,7 +16,7 @@ from .serializers import *
 from .filters import CategoryFilter, CouponDiscountFilter, PillFilter, ProductFilter, SpinWheelResultFilter
 from .models import (
     Category, Color, CouponDiscount, PillAddress, ProductAvailability,
-    ProductImage, ProductSales, Rating, Shipping, SubCategory, Brand, Product, Pill,
+    ProductImage, Rating, Shipping, SubCategory, Brand, Product, Pill,
     SpinWheelDiscount, SpinWheelResult
 )
 from .permissions import IsOwner, IsOwnerOrReadOnly
@@ -839,12 +839,20 @@ class ProductAvailabilityListCreateView(generics.ListCreateAPIView):
     serializer_class = ProductAvailabilitySerializer
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['product', 'color', 'size']
-    # permission_classes = [IsAdminUser]
 
     def create(self, request, *args, **kwargs):
         product_id = request.data.get('product')
         size = request.data.get('size')
         color_id = request.data.get('color')
+        new_quantity = request.data.get('quantity', 0)
+        
+        try:
+            new_quantity = int(new_quantity)
+        except (ValueError, TypeError):
+            return Response(
+                {'quantity': 'Quantity must be a valid integer.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
         
         existing_availability = ProductAvailability.objects.filter(
             product_id=product_id,
@@ -853,15 +861,27 @@ class ProductAvailabilityListCreateView(generics.ListCreateAPIView):
         ).first()
         
         if existing_availability:
-            serializer = self.get_serializer(existing_availability, data=request.data, partial=True)
-            serializer.is_valid(raise_exception=True)
-            serializer.save()
+            # Calculate the new total quantity
+            total_quantity = existing_availability.quantity + new_quantity
+            
+            # Update the existing instance directly
+            existing_availability.quantity = total_quantity
+            
+            # Update other fields if provided
+            if 'native_price' in request.data:
+                existing_availability.native_price = request.data['native_price']
+            
+            existing_availability.save()
+            
+            serializer = self.get_serializer(existing_availability)
             return Response(serializer.data, status=status.HTTP_200_OK)
         
+        # If no existing availability, create new one
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        serializer.save()
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
 class ProductAvailabilityDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = ProductAvailability.objects.all()

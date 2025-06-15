@@ -1,7 +1,7 @@
 
 from django.contrib import admin
 from .models import (
-    Category, PayRequest, PillGift, PillItem, PriceDropAlert, ProductSales, SpecialProduct, SpinWheelDiscount, SpinWheelResult, SpinWheelSettings, StockAlert, SubCategory, Brand, Product, ProductImage, 
+    Category, PayRequest, PillGift, PillItem, PriceDropAlert, SpecialProduct, SpinWheelDiscount, SpinWheelResult, SpinWheelSettings, StockAlert, SubCategory, Brand, Product, ProductImage, 
     Color, ProductAvailability, Rating, Shipping, Pill, Discount,
     CouponDiscount, PillAddress
 )
@@ -58,14 +58,6 @@ admin.site.register(PillItem)
 
 
 
-@admin.register(ProductSales)
-class ProductSalesAdmin(admin.ModelAdmin):
-    list_display = ('product', 'quantity', 'size', 'color', 'price_at_sale', 'date_sold', 'pill')
-    list_filter = ('date_sold', 'size', 'color')
-    search_fields = ('product__name', 'pill__pill_number')
-    date_hierarchy = 'date_sold'
-    readonly_fields = ('date_sold',)
-
 # ProductImage admin
 @admin.register(ProductImage)
 class ProductImageAdmin(admin.ModelAdmin):
@@ -106,41 +98,48 @@ from .models import Pill, CouponDiscount
 @admin.register(Pill)
 class PillAdmin(admin.ModelAdmin):
     list_display = (
-        'status', 'paid', 'date_added',
-        'price_without_coupons', 'coupon_discount', 'price_after_coupon_discount',
-        'shipping_price', 'final_price'
+        'pill_number', 'status', 'paid', 'date_added',
+        'price_without_coupons', 'coupon_discount_display',
+        'price_after_coupon_discount', 'shipping_price', 'final_price'
     )
     list_filter = ('status', 'paid', 'date_added')
-    search_fields = ('pilladdress__name', 'pilladdress__email')
+    search_fields = ('pill_number', 'pilladdress__name', 'pilladdress__email', 'user__username')
     readonly_fields = (
-        'price_without_coupons', 'coupon_discount', 'price_after_coupon_discount',
-        'shipping_price', 'final_price'
+        'price_without_coupons', 'coupon_discount_display',
+        'price_after_coupon_discount', 'shipping_price', 'final_price'
     )
 
-    # Custom method to display the coupon discount in the list_display
-    def coupon_discount(self, obj):
-        return obj.coupon_discount()
-    coupon_discount.short_description = 'Coupon Discount'
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        return qs.select_related(
+            'coupon',
+            'gift_discount',
+            'pilladdress'
+        ).prefetch_related(
+            'items'
+        )
 
-    # Custom method to display the price without coupons in the list_display
     def price_without_coupons(self, obj):
-        return obj.price_without_coupons()
-    price_without_coupons.short_description = 'Price Without Coupons'
+        return obj.price_without_coupons_or_gifts()
+    price_without_coupons.short_description = 'Base Price'
 
-    # Custom method to display the price after coupon discount in the list_display
+    def coupon_discount_display(self, obj):
+        return obj.calculate_coupon_discount()
+    coupon_discount_display.short_description = 'Coupon Discount'
+
     def price_after_coupon_discount(self, obj):
-        return obj.price_after_coupon_discount()
-    price_after_coupon_discount.short_description = 'Price After Coupon Discount'
+        return obj.price_without_coupons_or_gifts() - obj.calculate_coupon_discount()
+    price_after_coupon_discount.short_description = 'Price After Coupon'
 
-    # Custom method to display the shipping price in the list_display
     def shipping_price(self, obj):
         return obj.shipping_price()
-    shipping_price.short_description = 'Shipping Price'
+    shipping_price.short_description = 'Shipping'
 
-    # Custom method to display the final price in the list_display
     def final_price(self, obj):
         return obj.final_price()
-    final_price.short_description = 'Final Price'
+    final_price.short_description = 'Total Price'
+
+
 # Discount admin
 @admin.register(Discount)
 class DiscountAdmin(admin.ModelAdmin):

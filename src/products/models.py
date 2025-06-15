@@ -300,17 +300,17 @@ class ProductAvailability(models.Model):
     def __str__(self):
         return f"{self.product.name} - {self.size} - {self.color.name if self.color else 'No Color'}"
 
-class ProductSales(models.Model):
-    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='sales')
-    quantity = models.PositiveIntegerField()
-    size = models.CharField(max_length=50, null=True, blank=True)
-    color = models.ForeignKey(Color, on_delete=models.CASCADE, null=True, blank=True)
-    price_at_sale = models.FloatField()
-    date_sold = models.DateTimeField(auto_now_add=True)
-    pill = models.ForeignKey('Pill', on_delete=models.CASCADE, related_name='product_sales')
+# class ProductSales(models.Model):
+#     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='sales')
+#     quantity = models.PositiveIntegerField()
+#     size = models.CharField(max_length=50, null=True, blank=True)
+#     color = models.ForeignKey(Color, on_delete=models.CASCADE, null=True, blank=True)
+#     price_at_sale = models.FloatField()
+#     date_sold = models.DateTimeField(auto_now_add=True)
+#     pill = models.ForeignKey('Pill', on_delete=models.CASCADE, related_name='product_sales')
 
-    def __str__(self):
-        return f"{self.product.name} - {self.quantity} sold on {self.date_sold}"
+#     def __str__(self):
+#         return f"{self.product.name} - {self.quantity} sold on {self.date_sold}"
 
 class Shipping(models.Model):
     government = models.CharField(choices=GOVERNMENT_CHOICES, max_length=2)
@@ -320,7 +320,7 @@ class Shipping(models.Model):
         return f"{self.get_government_display()} - {self.shipping_price}"
 
 class PillItem(models.Model):
-    pill = models.ForeignKey('Pill', on_delete=models.CASCADE, null=True, blank=True, related_name='pill_items_related')
+    pill = models.ForeignKey('Pill', on_delete=models.CASCADE, null=True, blank=True, related_name='pill_items')
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='pill_items', null=True, blank=True)
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='pill_items')
     quantity = models.PositiveIntegerField(default=1)
@@ -328,13 +328,34 @@ class PillItem(models.Model):
     color = models.ForeignKey(Color, on_delete=models.SET_NULL, null=True, blank=True)
     status = models.CharField(choices=PILL_STATUS_CHOICES, max_length=1, null=True, blank=True)
     date_added = models.DateTimeField(auto_now_add=True, null=True, blank=True)
-
-    def __str__(self):
-        return f"{self.user.username} - {self.product.name} - {self.quantity} - {self.size} - {self.color.name if self.color else 'No Color'}"
-
+    
+    # New fields for sales analysis
+    native_price_at_sale = models.FloatField(null=True, blank=True)
+    price_at_sale = models.FloatField(null=True, blank=True)
+    date_sold = models.DateTimeField(null=True, blank=True)
+    
     class Meta:
+        ordering = ['-date_added']
         unique_together = ['user', 'product', 'size', 'color', 'status', 'pill']
 
+    def save(self, *args, **kwargs):
+        # Set date_sold when status changes to 'paid' or 'delivered'
+        if self.status in ['p', 'd'] and not self.date_sold:
+            self.date_sold = timezone.now()
+            
+        # Set prices if not already set
+        if self.status in ['p', 'd'] and not self.price_at_sale:
+            self.price_at_sale = self.product.discounted_price()
+            
+        if self.status in ['p', 'd'] and not self.native_price_at_sale:
+            availability = self.product.availabilities.filter(
+                size=self.size,
+                color=self.color
+            ).first()
+            self.native_price_at_sale = availability.native_price if availability else 0
+            
+        super().save(*args, **kwargs)
+     
 class Pill(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='pills')
     items = models.ManyToManyField(PillItem, related_name='pills')
