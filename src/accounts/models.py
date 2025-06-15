@@ -59,6 +59,7 @@ class User(AbstractUser):
     email = models.EmailField(blank=True, null=True, max_length=254)
     user_type = models.CharField(max_length=20, choices=USER_TYPE_CHOICES, default="student", null=True, blank=True)
     phone = models.CharField(max_length=20, null=True, blank=True)
+    phone2 = models.CharField(max_length=20, null=True, blank=True)
     year = models.CharField(
         max_length=20,
         choices=YEAR_CHOICES,
@@ -86,7 +87,8 @@ class UserAddress(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='addresses')
     name = models.CharField(max_length=150,null=True, blank=True)
     email = models.EmailField(null=True, blank=True)
-    phone = models.CharField(max_length=15, null=True, blank=True)
+    phone = models.CharField(max_length=20, null=True, blank=True)
+    phone2 = models.CharField(max_length=20, null=True, blank=True)
     government = models.CharField(choices=GOVERNMENT_CHOICES, max_length=2,null=True, blank=True)
     city = models.CharField(max_length=100, null=True, blank=True)
     address = models.CharField(max_length=255,null=True, blank=True)

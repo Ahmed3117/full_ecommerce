@@ -15,6 +15,9 @@ from django.shortcuts import get_object_or_404
 class StoreRequestListCreateView(generics.ListCreateAPIView):
     serializer_class = StoreRequestSerializer
     permission_classes = [permissions.AllowAny]  # Changed from IsAuthenticated to AllowAny
+    filter_backends = [DjangoFilterBackend, SearchFilter]
+    filterset_fields = ['status', 'government']
+    search_fields = ['store_name', 'email', 'first_name', 'last_name', 'phone1', 'phone2']
 
     def get_queryset(self):
         if self.request.user.is_staff:
@@ -139,14 +142,14 @@ class RejectStoreRequestView(APIView):
             status=status.HTTP_200_OK
         )
 
-class StoreListView(generics.ListAPIView):
+class StoreListCreateView(generics.ListCreateAPIView):
     queryset = Store.objects.all()
     serializer_class = StoreSerializer
     filter_backends = [DjangoFilterBackend, SearchFilter]
     filterset_fields = ['government',]
     search_fields = ['store_name', 'government', 'address', 'phone1', 'phone2', 'email']
 
-class StoreRetrieveView(generics.RetrieveAPIView):
+class StoreRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = StoreSerializer
     permission_classes = [permissions.IsAuthenticatedOrReadOnly]
     queryset = Store.objects.all()
@@ -154,6 +157,9 @@ class StoreRetrieveView(generics.RetrieveAPIView):
 class StoreReportingListCreateView(generics.ListCreateAPIView):
     serializer_class = StoreReportingSerializer
     permission_classes = [permissions.IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, SearchFilter]
+    filterset_fields = ['store','is_handled']
+    search_fields = ['store__store_name', 'user__username']
 
     def get_queryset(self):
         if self.request.user.is_staff:

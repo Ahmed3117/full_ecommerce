@@ -18,6 +18,9 @@ urlpatterns = [
     path('addresses/<int:pk>/', views.UserAddressRetrieveUpdateDestroyView.as_view(), name='user-address-detail'),
     #-----------------Admin--------------------------#
     path('dashboard/create-admin-user/', views.create_admin_user, name='create-admin-user'),
+    path('dashboard/users/create/', views.UserCreateAPIView.as_view(), name='user-create'),
+    path('dashboard/users/update/<int:pk>/', views.UserUpdateAPIView.as_view(), name='user-update'),
+    path('dashboard/users/delete/<int:pk>/', views.UserDeleteAPIView.as_view(), name='user-delete'),
     # User profile image 
     path('dashboard/profile-images/', views.UserProfileImageListCreateView.as_view(), name='profile-image-list'),
     path('dashboard/profile-images/<int:pk>/', views.UserProfileImageRetrieveUpdateDestroyView.as_view(), name='profile-image-detail'),

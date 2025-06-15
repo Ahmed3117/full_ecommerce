@@ -35,7 +35,7 @@ class UserSerializer(serializers.ModelSerializer):
         model = User
         fields = (
             'id', 'username', 'email', 'password', 'name','government', 'city',
-            'is_staff', 'is_superuser', 'user_type', 'phone',
+            'is_staff', 'is_superuser', 'user_type', 'phone','phone2',
             'year', 'address', 'user_profile_image',
             'user_profile_image_id','created_at', 
             'cart_items_count', 'last_cart_added',
@@ -47,6 +47,7 @@ class UserSerializer(serializers.ModelSerializer):
             'email': {'required': False, 'allow_null': True, 'allow_blank': True},
             'user_type': {'required': False, 'allow_null': True},
             'phone': {'required': False, 'allow_null': True, 'allow_blank': True},
+            'phone2': {'required': False, 'allow_null': True, 'allow_blank': True},
             'year': {'required': False, 'allow_null': True},
             'address': {'required': False, 'allow_null': True, 'allow_blank': True},
         }
@@ -93,14 +94,6 @@ class UserSerializer(serializers.ModelSerializer):
             'all_time_total': paid + pending
         }
 
-    # def validate(self, data):
-    #     # Validate that year is only set for students
-    #     if data.get('year') and data.get('user_type') != 'student':
-    #         raise serializers.ValidationError(
-    #             "Year can only be set for student users"
-    #         )
-    #     return data
-
     def create(self, validated_data):
         profile_image = validated_data.pop('user_profile_image', None)
         email = validated_data.get('email', None)
@@ -113,6 +106,7 @@ class UserSerializer(serializers.ModelSerializer):
             is_superuser=validated_data.get('is_superuser', False),
             user_type=validated_data.get('user_type', None),
             phone=validated_data.get('phone', None),
+            phone2=validated_data.get('phone2', None),
             year=validated_data.get('year', None),
             address=validated_data.get('address', None),
             government=validated_data.get('government', None),
@@ -120,64 +114,6 @@ class UserSerializer(serializers.ModelSerializer):
             user_profile_image=profile_image
         )
         return user
-
-
-# class UserListSerializer(serializers.ModelSerializer):
-#     cart_items_count = serializers.SerializerMethodField()
-#     last_cart_added = serializers.SerializerMethodField()
-#     loved_count = serializers.SerializerMethodField()
-#     pill_stats = serializers.SerializerMethodField()
-#     financial_summary = serializers.SerializerMethodField()
-    
-#     class Meta:
-#         model = User
-#         fields = [
-#             'id', 'username', 'name', 'email', 'phone', 'user_type', 
-#             'created_at', 'cart_items_count', 'last_cart_added',
-#             'loved_count', 'pill_stats', 'financial_summary'
-#         ]
-    
-#     def get_cart_items_count(self, obj):
-#         from products.models import PillItem
-#         return PillItem.objects.filter(user=obj, status__isnull=True).count()
-    
-#     def get_last_cart_added(self, obj):
-#         from products.models import PillItem
-#         last_item = PillItem.objects.filter(
-#             user=obj, 
-#             status__isnull=True
-#         ).order_by('-date_added').first()
-#         return last_item.date_added if last_item else None
-    
-#     def get_loved_count(self, obj):
-#         return obj.loved_products.count()
-    
-#     def get_pill_stats(self, obj):
-#         status_counts = {status[0]: 0 for status in PILL_STATUS_CHOICES}
-#         for status, count in obj.pills.values_list('status').annotate(
-#             count=Count('id')
-#         ):
-#             status_counts[status] = count
-#         return {
-#             'total': sum(status_counts.values()),
-#             'by_status': status_counts
-#         }
-    
-#     def get_financial_summary(self, obj):
-#         paid = 0
-#         pending = 0
-        
-#         for pill in obj.pills.all():
-#             if pill.status == 'd':
-#                 paid += pill.final_price()
-#             elif pill.status not in ['r', 'c']:
-#                 pending += pill.final_price()
-        
-#         return {
-#             'total_paid': paid,
-#             'total_pending': pending,
-#             'all_time_total': paid + pending
-#         }
 
 
 class PasswordResetRequestSerializer(serializers.Serializer):
@@ -197,7 +133,7 @@ class UserAddressSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = UserAddress
-        fields = ['id', 'name', 'email', 'phone', 'address', 'government', 'government_name','is_default', 'created_at', 'updated_at']
+        fields = ['id', 'name', 'email', 'phone','phone2', 'address', 'government', 'government_name','is_default', 'created_at', 'updated_at']
         read_only_fields = ['id', 'created_at', 'updated_at']
 
     def get_government_name(self, obj):
@@ -221,7 +157,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = [
-            'id', 'username', 'email', 'name', 'user_type', 'phone', 'year',
+            'id', 'username', 'email', 'name', 'user_type', 'phone','phone2', 'year',
             'address', 'user_profile_image', 'addresses', 'pills',
             'loved_products', 'total_spent', 'favorite_category'
         ]
@@ -264,7 +200,7 @@ class UserDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = [
-            'id', 'username', 'name', 'email', 'phone', 'user_type', 'year',
+            'id', 'username', 'name', 'email', 'phone','phone2', 'user_type', 'year',
             'government', 'city', 'address', 'created_at', 'user_profile_image',
             'addresses', 'pill_stats', 'loved_products', 'financial_summary',
             'cart_items', 'last_cart_added' 

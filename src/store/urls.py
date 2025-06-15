@@ -1,8 +1,8 @@
 from django.urls import path
 from .views import (
-    StoreRequestListCreateView, StoreRequestRetrieveUpdateDestroyView,
+    StoreListCreateView, StoreRequestListCreateView, StoreRequestRetrieveUpdateDestroyView,
     ApproveStoreRequestView, RejectStoreRequestView,
-    StoreListView, StoreRetrieveView,
+    StoreRetrieveUpdateDestroyView,
     StoreReportingListCreateView, StoreReportingRetrieveUpdateView
 )
 
@@ -14,8 +14,8 @@ urlpatterns = [
     path('store-requests/<int:pk>/reject/', RejectStoreRequestView.as_view(), name='reject-store-request'),
     
     # Stores
-    path('stores/', StoreListView.as_view(), name='store-list'),
-    path('stores/<int:pk>/', StoreRetrieveView.as_view(), name='store-detail'),
+    path('stores/', StoreListCreateView.as_view(), name='store-list'),
+    path('stores/<int:pk>/', StoreRetrieveUpdateDestroyView.as_view(), name='store-detail'),
     
     # Store Reporting
     path('store-reports/', StoreReportingListCreateView.as_view(), name='store-report-list'),

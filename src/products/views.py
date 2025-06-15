@@ -2,7 +2,7 @@ from datetime import timedelta
 import random
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from django.db.models import Sum, F, Count, Q
+from django.db.models import Sum, F, Count, Q, Case, When, IntegerField
 from django.db import transaction
 from rest_framework import generics, status
 from rest_framework.exceptions import ValidationError
@@ -401,6 +401,10 @@ class MarkAlertAsNotifiedView(APIView):
         alert.save()
         return Response({'status': 'success'})
 
+
+
+
+
 class NewArrivalsView(generics.ListAPIView):
     serializer_class = ProductSerializer
     filter_backends = [DjangoFilterBackend]
@@ -420,19 +424,42 @@ class BestSellersView(generics.ListAPIView):
     filterset_fields = ['category', 'sub_category', 'brand']
 
     def get_queryset(self):
+        # Get products with paid/delivered items
         queryset = Product.objects.annotate(
-            total_sold=Sum('sales__quantity')
+            total_sold=Sum(
+                Case(
+                    When(
+                        pill_items__status__in=['p', 'd'],
+                        then='pill_items__quantity'
+                    ),
+                    default=0,
+                    output_field=IntegerField()
+                )
+            )
         ).filter(
             total_sold__gt=0
         ).order_by('-total_sold')
+        
+        # Apply date filter if provided
         days = self.request.query_params.get('days', None)
         if days:
             date_threshold = timezone.now() - timedelta(days=int(days))
-            queryset = queryset.filter(
-                sales__date_sold__gte=date_threshold
-            ).annotate(
-                recent_sold=Sum('sales__quantity')
+            queryset = queryset.annotate(
+                recent_sold=Sum(
+                    Case(
+                        When(
+                            pill_items__status__in=['p', 'd'],
+                            pill_items__date_sold__gte=date_threshold,
+                            then='pill_items__quantity'
+                        ),
+                        default=0,
+                        output_field=IntegerField()
+                    )
+                )
+            ).filter(
+                recent_sold__gt=0
             ).order_by('-recent_sold')
+        
         return queryset
 
 class FrequentlyBoughtTogetherView(generics.ListAPIView):
@@ -442,14 +469,25 @@ class FrequentlyBoughtTogetherView(generics.ListAPIView):
         product_id = self.request.query_params.get('product_id')
         if not product_id:
             return Product.objects.none()
+        
+        # Get pills that contain the requested product
+        pill_ids = PillItem.objects.filter(
+            product_id=product_id,
+            status__in=['p', 'd']
+        ).values_list('pill_id', flat=True)
+        
+        # Find other products in those pills
         frequent_products = Product.objects.filter(
-            sales__pill__items__product_id=product_id
+            pill_items__pill_id__in=pill_ids,
+            pill_items__status__in=['p', 'd']
         ).exclude(
             id=product_id
         ).annotate(
-            co_purchase_count=Count('id')
+            co_purchase_count=Count('pill_items__id')
         ).order_by('-co_purchase_count')[:5]
+        
         return frequent_products
+
 
 class ProductRecommendationsView(generics.ListAPIView):
     serializer_class = ProductSerializer
@@ -459,6 +497,7 @@ class ProductRecommendationsView(generics.ListAPIView):
         user = self.request.user
         current_product_id = self.request.query_params.get('product_id')
         recommendations = []
+        
         if current_product_id:
             current_product = get_object_or_404(Product, id=current_product_id)
             similar_products = Product.objects.filter(
@@ -467,14 +506,21 @@ class ProductRecommendationsView(generics.ListAPIView):
                 Q(brand=current_product.brand)
             ).exclude(id=current_product_id).distinct()
             recommendations.extend(list(similar_products))
+        
+        # Loved products
         loved_products = Product.objects.filter(
             lovedproduct__user=user
         ).exclude(id__in=[p.id for p in recommendations]).distinct()
         recommendations.extend(list(loved_products))
+        
+        # Purchased products (using PillItem now)
         purchased_products = Product.objects.filter(
-            sales__pill__user=user
+            pill_items__user=user,
+            pill_items__status__in=['p', 'd']
         ).exclude(id__in=[p.id for p in recommendations]).distinct()
-        recommendations.extend(purchased_products)
+        recommendations.extend(list(purchased_products))
+        
+        # Deduplicate
         seen = set()
         unique_recommendations = []
         for product in recommendations:
@@ -483,7 +529,11 @@ class ProductRecommendationsView(generics.ListAPIView):
                 unique_recommendations.append(product)
             if len(unique_recommendations) >= 12:
                 break
+                
         return unique_recommendations
+
+
+
 
 class SpinWheelView(APIView):
     permission_classes = [IsAuthenticated]

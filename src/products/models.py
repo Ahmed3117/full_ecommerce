@@ -337,6 +337,11 @@ class PillItem(models.Model):
     class Meta:
         ordering = ['-date_added']
         unique_together = ['user', 'product', 'size', 'color', 'status', 'pill']
+        indexes = [
+            models.Index(fields=['status']),
+            models.Index(fields=['date_sold']),
+            models.Index(fields=['product', 'status']),
+        ]
 
     def save(self, *args, **kwargs):
         # Set date_sold when status changes to 'paid' or 'delivered'
