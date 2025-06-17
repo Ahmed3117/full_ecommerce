@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import CustomerActivityView, OrderAnalysisView, ProductInventoryView, ProductPerformanceView, CategoryPerformanceView, SalesDashboardView, StoreAnalyticsView
+from .views import CustomerActivityView, DashboardAnalyticsView, OrderAnalysisView, ProductInventoryView, ProductPerformanceView, CategoryPerformanceView, SalesDashboardView, StoreAnalyticsView
 
 
 urlpatterns = [
@@ -11,5 +11,7 @@ urlpatterns = [
     path('order-analysis/', OrderAnalysisView.as_view(), name='order-analysis'),
     path('customer-activity/', CustomerActivityView.as_view(), name='customer-activity'),
     path('store-analytics/', StoreAnalyticsView.as_view(), name='store-analytics'),
-
+    # a specific endpoint for alot of data
+    # path('super-dashboard/', SuperDashboardView.as_view(), name='super-dashboard'),
+    path('full-dashboard/', DashboardAnalyticsView.as_view(), name='super-dashboard'),
 ]
