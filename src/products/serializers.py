@@ -606,6 +606,164 @@ class PillItemCreateSerializer(serializers.ModelSerializer):
         total_available = availabilities.aggregate(total=Sum('quantity'))['total'] or 0
         return total_available
 
+class AdminPillItemSerializer(PillItemCreateUpdateSerializer):
+    user = serializers.PrimaryKeyRelatedField(
+        queryset=User.objects.all(),
+        required=False
+    )
+    user_details = serializers.SerializerMethodField()
+    product_details = serializers.SerializerMethodField()
+    color_details = serializers.SerializerMethodField()
+    pill_details = serializers.SerializerMethodField()
+
+    class Meta(PillItemCreateUpdateSerializer.Meta):
+        fields = [
+            'id', 'user', 'user_details', 'product', 'product_details', 
+            'quantity', 'size', 'color', 'color_details', 'max_quantity',
+            'status', 'date_added', 'pill', 'pill_details'
+        ]
+        read_only_fields = ['date_added', 'max_quantity']
+
+    # Implement all required get_*_details methods
+    def get_user_details(self, obj):
+        user = obj.user
+        if not user:
+            return None
+        return {
+            'id': user.id,
+            'name': user.name,
+            'email': user.email,
+            'phone': user.phone
+        }
+
+    def get_product_details(self, obj):
+        product = obj.product
+        request = self.context.get('request')
+        
+        main_image = None
+        if product.main_image():
+            if request:
+                main_image = request.build_absolute_uri(product.main_image())
+            else:
+                main_image = product.main_image()
+        
+        return {
+            'id': product.id,
+            'name': product.name,
+            'price': product.price,
+            'image': main_image
+        }
+
+    def get_color_details(self, obj):
+        if not obj.color:
+            return None
+        return {
+            'id': obj.color.id,
+            'name': obj.color.name,
+            'degree': obj.color.degree
+        }
+
+    def get_pill_details(self, obj):
+        if not obj.pill:
+            return None
+        return {
+            'id': obj.pill.id,
+            'pill_number': obj.pill.pill_number,
+            'status': obj.pill.status,
+            'date_added': obj.pill.date_added
+        }
+
+    # Inherited from PillItemCreateUpdateSerializer
+    # def get_max_quantity(self, obj):
+    #     return self._get_max_quantity(obj.product, obj.size, obj.color)
+
+    def to_representation(self, instance):
+        ret = super().to_representation(instance)
+        # Ensure max_quantity is always included
+        if 'max_quantity' not in ret:
+            ret['max_quantity'] = self.get_max_quantity(instance)
+        return ret
+
+    def validate(self, data):
+        data = super().validate(data)
+        
+        # Admin-specific validations
+        if 'status' in data and data['status'] == 'd' and 'pill' not in data:
+            raise serializers.ValidationError({
+                'pill': 'Pill must be specified for delivered items'
+            })
+        
+        return data
+
+    def create(self, validated_data):
+        # Set default user if not provided
+        if 'user' not in validated_data and hasattr(self.context.get('request'), 'user'):
+            validated_data['user'] = self.context['request'].user
+        return super().create(validated_data)
+
+
+class AdminLovedProductSerializer(serializers.ModelSerializer):
+    user = serializers.PrimaryKeyRelatedField(
+        queryset=User.objects.all(),
+        required=False
+    )
+    product = serializers.PrimaryKeyRelatedField(
+        queryset=Product.objects.all()
+    )
+    user_details = serializers.SerializerMethodField()
+    product_details = serializers.SerializerMethodField()
+
+    class Meta:
+        model = LovedProduct
+        fields = [
+            'id', 'user', 'user_details', 'product', 'product_details', 
+            'created_at'
+        ]
+        read_only_fields = ['created_at']
+
+    def get_user_details(self, obj):
+        return {
+            'id': obj.user.id if obj.user else None,
+            'name': obj.user.name if obj.user else None,
+            'email': obj.user.email if obj.user else None
+        }
+
+    def get_product_details(self, obj):
+        product = obj.product
+        request = self.context.get('request')
+        
+        main_image = None
+        if product.main_image():
+            if request:
+                main_image = request.build_absolute_uri(product.main_image())
+            else:
+                main_image = product.main_image()
+        
+        return {
+            'id': product.id,
+            'name': product.name,
+            'price': product.price,
+            'image': main_image
+        }
+
+    def validate(self, data):
+        # Check for duplicates
+        if self.instance is None and LovedProduct.objects.filter(
+            user=data.get('user', self.context.get('request').user),
+            product=data['product']
+        ).exists():
+            raise serializers.ValidationError({
+                'product': 'This product is already in the user\'s loved items'
+            })
+        return data
+
+    def create(self, validated_data):
+        # Set default user if not provided
+        if 'user' not in validated_data and hasattr(self.context.get('request'), 'user'):
+            validated_data['user'] = self.context['request'].user
+        return super().create(validated_data)
+
+
 class PillCreateSerializer(serializers.ModelSerializer):
     items = PillItemCreateSerializer(many=True, required=False)
     user_name = serializers.SerializerMethodField()

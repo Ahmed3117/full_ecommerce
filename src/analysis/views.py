@@ -6,12 +6,13 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAdminUser
 from django.db.models import Sum, Count, Avg, F, Q, FloatField, Case, When, BooleanField, Subquery, OuterRef, IntegerField, ExpressionWrapper
 from django.utils import timezone
-from datetime import datetime
+from django.utils.dateparse import parse_date
+from datetime import datetime, timedelta
 from django.db.models.functions import Coalesce
 from django.db.models.functions import TruncDay, TruncWeek, TruncMonth, TruncYear,TruncDate
 from accounts.models import GOVERNMENT_CHOICES, User
 from analysis.serializers import CategoryAnalyticsSerializer, InventoryAlertSerializer, ProductAnalyticsSerializer, SalesTrendSerializer
-from products.models import PILL_STATUS_CHOICES, Category, Discount, LovedProduct, Pill, PillItem, Product, ProductAvailability, SpecialProduct
+from products.models import PILL_STATUS_CHOICES, Category, Discount, LovedProduct, Pill, PillItem, Product, ProductAvailability, Rating, SpecialProduct
 from rest_framework import generics, filters
 from rest_framework.response import Response
 from django_filters import rest_framework as django_filters
@@ -32,102 +33,180 @@ from store.models import Store, StoreRequest
 
 
 class ProductAnalyticsFilter(django_filters.FilterSet):
-    start_date = django_filters.DateFilter(field_name='date_added', lookup_expr='gte')
-    end_date = django_filters.DateFilter(field_name='date_added', lookup_expr='lte')
+    start_date = django_filters.DateFilter(method='filter_by_sale_date')
+    end_date = django_filters.DateFilter(method='filter_by_sale_date')
     min_price = django_filters.NumberFilter(field_name='price', lookup_expr='gte')
     max_price = django_filters.NumberFilter(field_name='price', lookup_expr='lte')
     category = django_filters.NumberFilter(field_name='category__id')
-    
+    is_low_stock = django_filters.BooleanFilter(method='filter_is_low_stock')
     class Meta:
         model = Product
-        fields = ['category', 'brand', 'start_date', 'end_date', 'min_price', 'max_price']
+        fields = ['category', 'brand', 'min_price', 'max_price', 'is_low_stock']
+
+    def filter_by_sale_date(self, queryset, name, value):
+        # This logic is now handled correctly within the subqueries in the view
+        return queryset
+    
+    def filter_is_low_stock(self, queryset, name, value):
+        """
+        Filters the queryset based on the annotated 'is_low_stock' field.
+        The annotation (total_available <= threshold) is performed in the view.
+        """
+        # The `is_low_stock` annotation is already added in the view's get_queryset.
+        # This method will now correctly filter on that pre-calculated value.
+        if value in (True, 'true', 'True', 1):
+            return queryset.filter(is_low_stock=True)
+        if value in (False, 'false', 'False', 0):
+            return queryset.filter(is_low_stock=False)
+        return queryset
 
 class ProductPerformanceView(generics.ListAPIView):
     serializer_class = ProductAnalyticsSerializer
     filter_backends = [django_filters.DjangoFilterBackend, filters.OrderingFilter, filters.SearchFilter]
     filterset_class = ProductAnalyticsFilter
-    ordering_fields = ['total_sold', 'revenue', 'average_rating', 'total_available', 'price']
+    ordering_fields = ['total_sold', 'revenue', 'average_rating', 'total_available', 'price', 'name']
     search_fields = ['name']
     
     def get_queryset(self):
-        queryset = Product.objects.all()
-        
-        start_date = self.request.query_params.get('start_date')
-        end_date = self.request.query_params.get('end_date')
+        # Use select_related for efficiency in the serializer (e.g., category.name)
+        base_queryset = Product.objects.select_related('category', 'brand')
+
+        start_date_str = self.request.query_params.get('start_date')
+        end_date_str = self.request.query_params.get('end_date')
         low_stock_threshold = self.request.query_params.get('low_stock_threshold')
 
-        queryset = queryset.annotate(
-            total_available=Coalesce(Sum('availabilities__quantity'), 0),
-            total_added=Coalesce(
-                Sum('availabilities__quantity',
-                    filter=Q(availabilities__date_added__range=(start_date, end_date))
-                    if start_date and end_date else Q()
-                ), 0),
-            total_sold=Coalesce(
-                Sum('sales__quantity',
-                    filter=Q(sales__date_sold__range=(start_date, end_date))
-                    if start_date and end_date else Q()
-                ), 0),
-            revenue=Coalesce(
-                Sum(
-                    ExpressionWrapper(
-                        F('sales__quantity') * F('sales__price_at_sale'),
-                        output_field=FloatField()
-                    ),
-                    filter=Q(sales__date_sold__range=(start_date, end_date))
-                    if start_date and end_date else Q()
-                ), 
-                0.0,
+        # --- Subquery Definitions ---
+
+        # 1. Subquery for total available stock
+        avail_sq = Subquery(
+            ProductAvailability.objects.filter(
+                product=OuterRef('pk')
+            ).values('product').annotate(total=Sum('quantity')).values('total')
+        )
+
+        # 2. Subquery for stock added within a date range
+        added_filter = Q(product=OuterRef('pk'))
+        if start_date_str and end_date_str:
+            parsed_start = parse_date(start_date_str)
+            parsed_end = parse_date(end_date_str)
+            if parsed_start and parsed_end:
+                end_of_day_exclusive = parsed_end + timedelta(days=1)
+                added_filter &= Q(date_added__gte=parsed_start, date_added__lt=end_of_day_exclusive)
+        
+        added_sq = Subquery(
+            ProductAvailability.objects.filter(added_filter)
+            .values('product').annotate(total=Sum('quantity')).values('total')
+        )
+
+        # 3. Subquery for sales and revenue with correct date handling
+        sales_filter = Q(product=OuterRef('pk'), status__in=['p', 'd'])
+        if start_date_str and end_date_str:
+            parsed_start = parse_date(start_date_str)
+            parsed_end = parse_date(end_date_str)
+            if parsed_start and parsed_end:
+                end_of_day_exclusive = parsed_end + timedelta(days=1)
+                sales_filter &= Q(date_sold__gte=parsed_start, date_sold__lt=end_of_day_exclusive)
+
+        sold_items_sq = PillItem.objects.filter(sales_filter).values('product')
+        
+        total_sold_sq = sold_items_sq.annotate(total=Sum('quantity')).values('total')
+        revenue_sq = sold_items_sq.annotate(
+            total=Sum(F('quantity') * F('price_at_sale'))
+        ).values('total')
+        
+        # 4. Subqueries for ratings
+        ratings_sq = Rating.objects.filter(product=OuterRef('pk')).values('product')
+        avg_rating_sq = ratings_sq.annotate(avg=Avg('star_number')).values('avg')
+        total_ratings_sq = ratings_sq.annotate(count=Count('id')).values('count')
+
+        # 5. Subquery for current discount
+        now = timezone.now()
+        current_discount_sq = Subquery(
+            Discount.objects.filter(
+                (Q(product=OuterRef('pk')) | Q(category=OuterRef('category'))),
+                discount_start__lte=now,
+                discount_end__gte=now,
+                is_active=True
+            ).order_by('-discount').values('discount')[:1] # Get the best discount
+        )
+
+        # --- Main Annotation ---
+        queryset = base_queryset.annotate(
+            total_available=Coalesce(avail_sq, 0, output_field=IntegerField()),
+            total_added=Coalesce(added_sq, 0, output_field=IntegerField()),
+            total_sold=Coalesce(total_sold_sq, 0, output_field=IntegerField()),
+            revenue=Coalesce(revenue_sq, 0.0, output_field=FloatField()),
+            average_rating=Coalesce(avg_rating_sq, 0.0, output_field=FloatField()),
+            total_ratings=Coalesce(total_ratings_sq, 0, output_field=IntegerField()),
+            current_discount=Coalesce(current_discount_sq, 0.0, output_field=FloatField()),
+        ).annotate(
+            price_after_discount=Case(
+                When(current_discount__gt=0, then=F('price') * (1 - F('current_discount') / 100.0)),
+                default=F('price'),
                 output_field=FloatField()
             ),
-            average_rating=Coalesce(Avg('ratings__star_number'), 0.0),
-            total_ratings=Count('ratings'),
             has_discount=Case(
-                When(discounts__discount_end__gte=timezone.now(), then=True),
+                When(current_discount__gt=0, then=True),
                 default=False,
                 output_field=BooleanField()
             ),
-            current_discount=Coalesce(
-                Subquery(
-                    Discount.objects.filter(
-                        Q(product=OuterRef('pk')) | Q(category=OuterRef('category')),
-                        discount_start__lte=timezone.now(),
-                        discount_end__gte=timezone.now()
-                    ).values('discount')[:1]
-                ), 0.0
-            ),
-            price_after_discount=Case(
-                When(
-                    current_discount__gt=0,
-                    then=F('price') * (1 - F('current_discount') / 100)
-                ),
-                default=F('price'),
-                output_field=FloatField()
+            is_low_stock=Case(
+                When(total_available__lte=F('threshold'), then=True),
+                default=False,
+                output_field=BooleanField()
             )
         )
 
-        if low_stock_threshold:
-            queryset = queryset.filter(total_available__lte=low_stock_threshold)
-
+        # Apply final filter for low stock threshold if requested
+        if low_stock_threshold is not None:
+            try:
+                threshold_val = int(low_stock_threshold)
+                queryset = queryset.filter(total_available__lte=threshold_val)
+            except (ValueError, TypeError):
+                pass
+        
         return queryset
+
 
 class CategoryPerformanceView(generics.ListAPIView):
     serializer_class = CategoryAnalyticsSerializer
-    
+
     def get_queryset(self):
-        return Category.objects.annotate(
-            total_products=Count('products'),
-            total_sales=Coalesce(
-                Sum('products__sales__quantity'),
-                0,
-                output_field=IntegerField()
-            ),
-            revenue=Coalesce(
-                Sum(F('products__sales__quantity') * F('products__sales__price_at_sale')),
-                0,
-                output_field=FloatField()
-            )
+        # Subquery for total available quantity
+        avail_sq = Subquery(
+            Product.objects.filter(
+                category=OuterRef('pk')
+            ).values('category').annotate(
+                total=Sum('availabilities__quantity')
+            ).values('total')
         )
+
+        # Base subquery for sold items
+        sold_items = PillItem.objects.filter(
+            product__category=OuterRef('pk'),
+            status__in=['p', 'd']
+        )
+        
+        # Subquery for total sales quantity
+        sales_sq = Subquery(
+            sold_items.values('product__category').annotate(
+                total=Sum('quantity')
+            ).values('total')
+        )
+
+        # Subquery for total revenue
+        revenue_sq = Subquery(
+            sold_items.values('product__category').annotate(
+                total=Sum(F('quantity') * F('price_at_sale'))
+            ).values('total')
+        )
+
+        return Category.objects.annotate(
+            total_products=Count('products', distinct=True),
+            total_available_quantity=Coalesce(avail_sq, 0, output_field=IntegerField()),
+            total_sales=Coalesce(sales_sq, 0, output_field=IntegerField()),
+            revenue=Coalesce(revenue_sq, 0.0, output_field=FloatField())
+        ).order_by('-revenue')
 
 ######################### New Consolidated Views #########################
 

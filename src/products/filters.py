@@ -154,7 +154,7 @@ class PillFilter(filters.FilterSet):
 
     class Meta:
         model = Pill
-        fields = ['status', 'paid', 'pill_number', 'pilladdress__government', 'pilladdress__pay_method']
+        fields = ['status', 'paid', 'user','pill_number', 'pilladdress__government', 'pilladdress__pay_method']
         
         
         

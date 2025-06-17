@@ -7,6 +7,7 @@ from django.db import transaction
 from rest_framework import generics, status
 from rest_framework.exceptions import ValidationError
 from rest_framework import filters as rest_filters
+from rest_framework.filters import OrderingFilter
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, IsAdminUser, AllowAny
@@ -819,6 +820,58 @@ class SpecialProductRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIV
     queryset = SpecialProduct.objects.all()
     serializer_class = SpecialProductSerializer
     # permission_classes = [IsAdminUser]
+
+class PillItemListCreateView(generics.ListCreateAPIView):
+    queryset = PillItem.objects.select_related(
+        'user', 'product', 'color', 'pill'
+    ).prefetch_related('product__images')
+    serializer_class = AdminPillItemSerializer
+    filter_backends = [DjangoFilterBackend, OrderingFilter]
+    
+    # Updated filterset_fields
+    filterset_fields = {
+        'status': ['exact', 'in', 'isnull'],  # <-- Add 'isnull' here
+        'user': ['exact'],
+        'product': ['exact'],
+        'pill': ['exact', 'isnull'],
+        'date_added': ['gte', 'lte', 'exact'],
+        'size': ['exact'],
+        'color': ['exact', 'isnull']
+    }
+    
+    ordering_fields = ['date_added', 'quantity']
+    ordering = ['-date_added']
+
+class PillItemRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = PillItem.objects.select_related(
+        'user', 'product', 'color', 'pill'
+    )
+    serializer_class = AdminPillItemSerializer
+    lookup_field = 'pk'
+
+    def perform_destroy(self, instance):
+        if instance.pill and instance.pill.status in ['p', 'd']:
+            raise serializers.ValidationError("Cannot delete items from paid/delivered pills")
+        instance.delete()
+
+class LovedProductListCreateView(generics.ListCreateAPIView):
+    queryset = LovedProduct.objects.select_related(
+        'user', 'product'
+    ).prefetch_related('product__images')
+    serializer_class = AdminLovedProductSerializer
+    filter_backends = [DjangoFilterBackend, OrderingFilter]
+    filterset_fields = {
+        'user': ['exact'],
+        'product': ['exact'],
+        'created_at': ['gte', 'lte', 'exact']
+    }
+    ordering_fields = ['created_at']
+    ordering = ['-created_at']
+
+class LovedProductRetrieveDestroyView(generics.RetrieveDestroyAPIView):
+    queryset = LovedProduct.objects.select_related('user', 'product')
+    serializer_class = AdminLovedProductSerializer
+    lookup_field = 'pk'
 
 class PillListCreateView(generics.ListCreateAPIView):
     queryset = Pill.objects.all()

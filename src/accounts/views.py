@@ -284,6 +284,7 @@ class AdminUserListView(generics.ListAPIView):
     search_fields = ['username', 'name', 'email', 'phone','address', 'government', 'city']
     filterset_fields = ['is_staff', 'is_superuser','year', 'government']
 
+
 class AdminUserDetailView(generics.RetrieveAPIView):
     serializer_class = UserDetailSerializer
     # permission_classes = [IsAdminUser]

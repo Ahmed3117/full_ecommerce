@@ -61,6 +61,15 @@ urlpatterns = [
     path('dashboard/product-descriptions/<int:pk>/', views.ProductDescriptionRetrieveUpdateDestroyView.as_view(), name='admin-product-description-detail'),
     path('dashboard/special-products/', views.SpecialProductListCreateView.as_view(), name='admin-special-product-list-create'),
     path('dashboard/special-products/<int:pk>/', views.SpecialProductRetrieveUpdateDestroyView.as_view(), name='admin-special-product-detail'),
+    
+    # PillItems endpoints
+    path('dashboard/pill-items/', views.PillItemListCreateView.as_view(), name='pillitem-list'),
+    path('dashboard/pill-items/<int:pk>/', views.PillItemRetrieveUpdateDestroyView.as_view(), name='pillitem-detail'),
+    
+    # LovedItems endpoints
+    path('dashboard/loved-items/', views.LovedProductListCreateView.as_view(), name='lovedproduct-list'),
+    path('dashboard/loved-items/<int:pk>/', views.LovedProductRetrieveDestroyView.as_view(), name='lovedproduct-detail'),
+    
     path('dashboard/pills/', views.PillListCreateView.as_view(), name='admin-pill-list-create'),
     path('dashboard/pills/<int:pk>/', views.PillRetrieveUpdateDestroyView.as_view(), name='admin-pill-detail'),
     path('dashboard/discounts/', views.DiscountListCreateView.as_view(), name='admin-discount-list-create'),

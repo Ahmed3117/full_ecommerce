@@ -4,41 +4,49 @@ from rest_framework import serializers
 from products.models import Category, Product
 
 class ProductAnalyticsSerializer(serializers.ModelSerializer):
-    category_name = serializers.SerializerMethodField()
-    total_available = serializers.IntegerField()
-    total_added = serializers.IntegerField() 
-    total_sold = serializers.IntegerField()
-    revenue = serializers.FloatField()
-    average_rating = serializers.FloatField()
-    total_ratings = serializers.IntegerField()
-    has_discount = serializers.BooleanField()
-    current_discount = serializers.FloatField()
-    price_after_discount = serializers.FloatField()
-    threshold = serializers.IntegerField()
-    is_low_stock = serializers.SerializerMethodField()
-    def get_category_name(self, obj):
-        return obj.category.name if obj.category else "No Category"
-    def get_is_low_stock(self, obj):
-        return obj.total_quantity() <= obj.threshold
+    # Use select_related in the view for this field for efficiency
+    category_name = serializers.CharField(source='category.name', read_only=True, default="No Category")
     
+    # These fields are all calculated in the view's annotation
+    total_available = serializers.IntegerField(read_only=True)
+    total_added = serializers.IntegerField(read_only=True) 
+    total_sold = serializers.IntegerField(read_only=True)
+    revenue = serializers.FloatField(read_only=True)
+    average_rating = serializers.FloatField(read_only=True)
+    total_ratings = serializers.IntegerField(read_only=True)
+    has_discount = serializers.BooleanField(read_only=True)
+    current_discount = serializers.FloatField(read_only=True)
+    price_after_discount = serializers.FloatField(read_only=True)
+    
+    # We will annotate this field in the view to avoid N+1 queries
+    is_low_stock = serializers.BooleanField(read_only=True)
     
     class Meta:
         model = Product
         fields = [
-            'id', 'name', 'category_name', 'total_available', 'total_added',
-            'total_sold', 'revenue', 'average_rating', 'total_ratings',
-            'price', 'has_discount', 'current_discount', 'price_after_discount','threshold', 'is_low_stock',
-            'date_added'
+            'id', 'name', 'category_name', 'price', 'threshold', 'date_added',
+            'total_available', 'total_added', 'total_sold', 'revenue', 
+            'average_rating', 'total_ratings', 'has_discount', 'current_discount', 
+            'price_after_discount', 'is_low_stock'
         ]
 
 class CategoryAnalyticsSerializer(serializers.ModelSerializer):
-    total_products = serializers.IntegerField()
-    total_sales = serializers.IntegerField()
-    revenue = serializers.FloatField()
-    
+    total_products = serializers.IntegerField(read_only=True)
+    total_sales = serializers.IntegerField(read_only=True)
+    revenue = serializers.FloatField(read_only=True)
+    total_available_quantity = serializers.IntegerField(read_only=True) # <-- Add this line
+
     class Meta:
         model = Category
-        fields = ['id', 'name', 'total_products', 'total_sales', 'revenue']
+        fields = [
+            'id', 
+            'name', 
+            'total_products', 
+            'total_sales', 
+            'revenue', 
+            'total_available_quantity' # <-- And add it here
+        ]
+
 
 class InventoryAlertSerializer(serializers.ModelSerializer):
     total_available = serializers.IntegerField()
