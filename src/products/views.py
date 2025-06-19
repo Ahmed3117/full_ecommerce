@@ -71,6 +71,9 @@ class UserCartView(generics.ListAPIView):
     def get_queryset(self):
         return PillItem.objects.filter(user=self.request.user, status__isnull=True).order_by('-date_added')
 
+
+
+
 class PillItemCreateView(generics.CreateAPIView):
     serializer_class = PillItemCreateUpdateSerializer
     permission_classes = [IsAuthenticated]
@@ -122,6 +125,8 @@ class PillItemCreateView(generics.CreateAPIView):
         headers = self.get_success_headers(serializer.data)
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
+
+
 class PillItemUpdateView(generics.UpdateAPIView):
     serializer_class = PillItemCreateUpdateSerializer
     permission_classes = [IsAuthenticated]
@@ -172,6 +177,9 @@ class PillCouponApplyView(generics.UpdateAPIView):
     def perform_update(self, serializer):
         pill = serializer.save()
         pill.apply_gift_discount()  # Re-apply gift after coupon update
+
+
+
 
 class PillAddressCreateUpdateView(generics.CreateAPIView, generics.UpdateAPIView):
     queryset = PillAddress.objects.all()
@@ -821,26 +829,30 @@ class SpecialProductRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIV
     serializer_class = SpecialProductSerializer
     # permission_classes = [IsAdminUser]
 
+from rest_framework import filters
+
+class CustomPillFilterBackend(filters.BaseFilterBackend):
+    def filter_queryset(self, request, queryset, view):
+        pill_id = request.query_params.get('pill')
+        if pill_id is not None:
+            # First validate that the pill exists
+            if Pill.objects.filter(id=pill_id).exists():
+                return queryset.filter(pill__id=pill_id)
+            else:
+                # Return empty queryset if pill doesn't exist
+                return queryset.none()
+        return queryset
+
+
 class PillItemListCreateView(generics.ListCreateAPIView):
     queryset = PillItem.objects.select_related(
         'user', 'product', 'color', 'pill'
     ).prefetch_related('product__images')
     serializer_class = AdminPillItemSerializer
-    filter_backends = [DjangoFilterBackend, OrderingFilter]
-    
-    # Updated filterset_fields
-    filterset_fields = {
-        'status': ['exact', 'in', 'isnull'],  # <-- Add 'isnull' here
-        'user': ['exact'],
-        'product': ['exact'],
-        'pill': ['exact', 'isnull'],
-        'date_added': ['gte', 'lte', 'exact'],
-        'size': ['exact'],
-        'color': ['exact', 'isnull']
-    }
-    
+    filter_backends = [CustomPillFilterBackend, OrderingFilter]
     ordering_fields = ['date_added', 'quantity']
     ordering = ['-date_added']
+    
 
 class PillItemRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
     queryset = PillItem.objects.select_related(
@@ -878,7 +890,7 @@ class PillListCreateView(generics.ListCreateAPIView):
     serializer_class = PillCreateSerializer
     filter_backends = [DjangoFilterBackend, rest_filters.SearchFilter]
     filterset_class = PillFilter
-    search_fields = ['pilladdress__phone', 'pilladdress__government', 'pilladdress__name', 'user__name', 'user__username']
+    search_fields = ['pilladdress__phone', 'pilladdress__government', 'pilladdress__name', 'user__name', 'user__username', 'pill_number']
     # permission_classes = [IsAdminUser]
 
     def get_serializer_class(self):
@@ -1068,3 +1080,7 @@ class ApplyPayRequestView(APIView):
             pill.status = 'p'
             pill.save()
         return Response({"status": "Pay request applied successfully"}, status=status.HTTP_200_OK)
+
+
+
+

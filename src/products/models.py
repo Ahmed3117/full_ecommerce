@@ -168,11 +168,15 @@ class Product(models.Model):
 
     def main_image(self):
         if self.base_image:
-            return self.base_image
+            return self.base_image  # This should return a FileField/ImageField object
+
         images = self.images.all()
         if images.exists():
-            return random.choice(images)
-        return None
+            # Make sure this returns a FileField/ImageField object
+            return random.choice(images).image
+
+        return None  # Explicitly return None if no image is found
+
 
     def images(self):
         return self.images.all()
@@ -324,7 +328,7 @@ class PillItem(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='pill_items', null=True, blank=True)
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='pill_items')
     quantity = models.PositiveIntegerField(default=1)
-    size = models.CharField(max_length=10, choices=SIZES_CHOICES, null=True)
+    size = models.CharField(max_length=10, choices=SIZES_CHOICES, null=True, blank=True)
     color = models.ForeignKey(Color, on_delete=models.SET_NULL, null=True, blank=True)
     status = models.CharField(choices=PILL_STATUS_CHOICES, max_length=1, null=True, blank=True)
     date_added = models.DateTimeField(auto_now_add=True, null=True, blank=True)
@@ -370,6 +374,11 @@ class Pill(models.Model):
     coupon = models.ForeignKey('CouponDiscount', on_delete=models.SET_NULL, null=True, blank=True, related_name='pills')
     coupon_discount = models.FloatField(default=0.0)  # Stores discount amount
     gift_discount = models.ForeignKey('PillGift', on_delete=models.SET_NULL, null=True, blank=True, related_name='pills')
+    tracking_number = models.CharField(
+        max_length=50,
+        null=True,
+        blank=True
+    )
     pill_number = models.CharField(
         max_length=20,
         editable=False,
@@ -380,12 +389,20 @@ class Pill(models.Model):
     def save(self, *args, **kwargs):
         if not self.pill_number:
             self.pill_number = generate_pill_number()
+
         is_new = not self.pk
         old_status = None if is_new else Pill.objects.get(pk=self.pk).status
+
         super().save(*args, **kwargs)
+
         if is_new:
             PillStatusLog.objects.create(pill=self, status=self.status)
-            self.items.update(status=self.status)
+            # For new pills, update all items' status and price/sale info if needed
+            for item in self.items.all():
+                item.status = self.status
+                if self.status in ['p', 'd']:
+                    self._update_pill_item_prices(item)
+                item.save()
             self.apply_gift_discount()
         else:
             if old_status != self.status:
@@ -396,43 +413,93 @@ class Pill(models.Model):
                 if not created:
                     status_log.changed_at = timezone.now()
                     status_log.save()
+
+                # Handle inventory restoration for canceled/refused orders that were previously delivered
+                if self.status in ['c', 'r'] and old_status == 'd':
+                    self.restore_inventory()
+
+                # Update all items' status
                 self.items.update(status=self.status)
+
+                # For status changes to 'p' or 'd', update prices on each item
+                if self.status in ['p', 'd']:
+                    for item in self.items.all():
+                        self._update_pill_item_prices(item)
+                        item.save()
+
                 if self.status != 'd' and not self.paid:
                     self.apply_gift_discount()
-            if old_status != 'd' and self.status == 'd':
-                self.process_delivery()
-        if self.paid and self.status != 'p':
-            self.status = 'p'
-            super().save(*args, **kwargs)
-            self.send_payment_notification()
 
-    def process_delivery(self):
-        """Process items when pill is marked as delivered"""
+                if old_status != 'd' and self.status == 'd':
+                    self.process_delivery()
+
+                if self.paid and self.status != 'p':
+                    # self.status = 'p'
+                    super().save(*args, **kwargs)
+                    self.send_payment_notification()
+
+    def _update_pill_item_prices(self, item):
+        """Helper method to update prices and sale date on a pill item"""
+        if item.status in ['p', 'd']:
+            if not item.date_sold:
+                item.date_sold = timezone.now()
+
+            if not item.price_at_sale:
+                item.price_at_sale = item.product.discounted_price()
+
+            if not item.native_price_at_sale:
+                availability = item.product.availabilities.filter(
+                    size=item.size,
+                    color=item.color
+                ).first()
+                item.native_price_at_sale = availability.native_price if availability else 0
+
+    def restore_inventory(self):
+        """Restore inventory quantities for all items in the pill"""
         with transaction.atomic():
             for item in self.items.all():
-                # Find the specific availability for this pill item
                 try:
                     availability = ProductAvailability.objects.select_for_update().get(
                         product=item.product,
                         size=item.size,
                         color=item.color
                     )
+                    # Only restore quantity that was decremented
+                    # Assuming the full quantity was decremented when delivered
+                    availability.quantity += item.quantity
+                    availability.save()
+                except ProductAvailability.DoesNotExist:
+                    # Log error or handle appropriately if availability not found
+                    continue
+
+    def process_delivery(self):
+        """Process items when pill is marked as delivered"""
+        with transaction.atomic():
+            for item in self.items.all():
+                try:
                     
-                    # if availability.quantity < item.quantity:
-                    #     # This should ideally be handled more gracefully than raising a 500 error
-                    #     # For now, we'll keep the validation
-                    #     raise ValidationError(
-                    #         f"Not enough inventory for {item.product.name} "
-                    #         f"(Size: {item.size}, Color: {item.color.name if item.color else 'N/A'}). "
-                    #         f"Required: {item.quantity}, Available: {availability.quantity}"
-                    #     )
-                    
+                    color = item.color if item.color else None
+                    availability = ProductAvailability.objects.select_for_update().get(
+                        product=item.product,
+                        size=item.size,
+                        color=color
+                    )
+                    print("---------------------------------------")
+                    print(availability)
+                    print(availability.quantity)
+                    print("---------------------------------------")
+                    if availability.quantity < item.quantity:
+                        raise ValidationError(
+                            f"Not enough inventory for {item.product.name} "
+                            f"(Size: {item.size}, Color: {item.color.name if item.color else 'N/A'}). "
+                            f"Required: {item.quantity}, Available: {availability.quantity}"
+                        )
                     availability.quantity -= item.quantity
                     availability.save()
-                    
+                    # Update the item with sale information if not already set
+                    self._update_pill_item_prices(item)
+                    item.save()
                 except ProductAvailability.DoesNotExist:
-                    # This case should also be handled. What if the availability was deleted?
-                    # For now, we raise an error.
                     raise ValidationError(
                         f"Inventory record for {item.product.name} "
                         f"(Size: {item.size}, Color: {item.color.name if item.color else 'N/A'}) not found."

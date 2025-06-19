@@ -355,73 +355,74 @@ class UserCartSerializer(serializers.ModelSerializer):
 class PillCouponApplySerializer(serializers.ModelSerializer):
     coupon = CouponCodeField()
     discount_percentage = serializers.SerializerMethodField()
-    
+    price_after_coupon_discount = serializers.SerializerMethodField()
+
     class Meta:
         model = Pill
         fields = [
-            'id', 'coupon', 
-            'price_without_coupons', 'coupon_discount', 
+            'id', 'coupon',
+            'price_without_coupons_or_gifts', 'coupon_discount',
             'price_after_coupon_discount', 'final_price',
             'discount_percentage'
         ]
         read_only_fields = [
-            'id', 'price_without_coupons', 
-            'coupon_discount', 'price_after_coupon_discount', 
+            'id', 'price_without_coupons_or_gifts',
+            'coupon_discount', 'price_after_coupon_discount',
             'final_price', 'discount_percentage'
         ]
-    
+
     def validate_coupon(self, value):
         pill = self.instance
         now = timezone.now()
-        
         # Check if coupon is valid
         if not (value.coupon_start <= now <= value.coupon_end):
             raise serializers.ValidationError(
                 {"message": "This coupon has expired."}
             )
-        
         # Check if coupon is already applied
         if pill.coupon:
             raise serializers.ValidationError(
                 {"message": "A coupon is already applied to this order."}
             )
-        
         # Check coupon usage limits
         if value.available_use_times <= 0:
             raise serializers.ValidationError(
                 {"message": "This coupon has no remaining uses."}
             )
-        
         # Check if coupon is tied to user for wheel coupons
         if value.is_wheel_coupon and value.user != self.context['request'].user:
             raise serializers.ValidationError(
                 {"message": "This coupon is not valid for your account."}
             )
-        
         # Check minimum order value
-        if value.min_order_value and pill.price_without_coupons() < value.min_order_value:
+        if value.min_order_value and pill.price_without_coupons_or_gifts() < value.min_order_value:
             raise serializers.ValidationError({
                 "message": f"Order must be at least {value.min_order_value} to use this coupon."
             })
-        
         return value
-    
+
     def get_discount_percentage(self, obj):
-        if obj.coupon and obj.price_without_coupons() > 0:
-            return round((obj.coupon_discount / obj.price_without_coupons()) * 100)
+        base_price = obj.price_without_coupons_or_gifts()
+        if obj.coupon and base_price > 0:
+            return round((obj.calculate_coupon_discount() / base_price) * 100)
         return 0
-    
+
+    def get_price_after_coupon_discount(self, obj):
+        base_price = obj.price_without_coupons_or_gifts()
+        coupon_discount = obj.calculate_coupon_discount()
+        return max(0, base_price - coupon_discount)
+
     def update(self, instance, validated_data):
         coupon = validated_data.get('coupon')
         instance.coupon = coupon
-        instance.coupon_discount = (coupon.discount_value / 100) * instance.price_without_coupons()
+        instance.coupon_discount = (coupon.discount_value / 100) * instance.price_without_coupons_or_gifts()
         instance.save()
-        
         # Update coupon usage
         coupon.available_use_times -= 1
         coupon.save()
-        
         return instance
+
+
 
 class PillAddressSerializer(serializers.ModelSerializer):
     government = serializers.SerializerMethodField()
@@ -513,26 +514,26 @@ class PillItemCreateUpdateSerializer(serializers.ModelSerializer):
             color=color
         )
 
-        # if not availabilities.exists():
-        #     color_name = color.name if color else 'N/A'
-        #     raise serializers.ValidationError({
-        #         'non_field_errors': [
-        #             f"The selected variant (Size: {size or 'N/A'}, Color: {color_name}) "
-        #             f"is not available for {product.name}."
-        #         ]
-        #     })
+        if not availabilities.exists():
+            color_name = color.name if color else 'N/A'
+            raise serializers.ValidationError({
+                'non_field_errors': [
+                    f"The selected variant (Size: {size or 'N/A'}, Color: {color_name}) "
+                    f"is not available for {product.name}."
+                ]
+            })
 
-        # total_available = availabilities.aggregate(total=Sum('quantity'))['total'] or 0
+        total_available = availabilities.aggregate(total=Sum('quantity'))['total'] or 0
 
-        # if total_available < quantity:
-        #     color_name = color.name if color else 'N/A'
-        #     raise serializers.ValidationError({
-        #         'quantity': [
-        #             f"Not enough stock for {product.name} "
-        #             f"(Size: {size or 'N/A'}, Color: {color_name}). "
-        #             f"Available: {total_available}, Requested: {quantity}."
-        #         ]
-        #     })
+        if total_available < quantity:
+            color_name = color.name if color else 'N/A'
+            raise serializers.ValidationError({
+                'quantity': [
+                    f"Not enough stock for {product.name} "
+                    f"(Size: {size or 'N/A'}, Color: {color_name}). "
+                    f"Available: {total_available}, Requested: {quantity}."
+                ]
+            })
 
 
 class PillItemSerializer(serializers.ModelSerializer):
@@ -639,20 +640,32 @@ class AdminPillItemSerializer(PillItemCreateUpdateSerializer):
     def get_product_details(self, obj):
         product = obj.product
         request = self.context.get('request')
-        
-        main_image = None
-        if product.main_image():
-            if request:
-                main_image = request.build_absolute_uri(product.main_image())
+
+        # Get the image object (either FileField or ImageField)
+        image = product.main_image()
+
+        # Handle the image URL properly
+        if image:
+            if hasattr(image, 'url'):
+                # If it's a FileField/ImageField, get its URL
+                image_url = image.url
+                if request is not None:
+                    # If we have a request, make it an absolute URI
+                    image_url = request.build_absolute_uri(image_url)
             else:
-                main_image = product.main_image()
-        
+                # If it's already a URL string, use it directly
+                image_url = image
+        else:
+            image_url = None
+
         return {
             'id': product.id,
             'name': product.name,
             'price': product.price,
-            'image': main_image
+            'image': image_url
         }
+
+
 
     def get_color_details(self, obj):
         if not obj.color:
@@ -912,11 +925,11 @@ class PillDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = Pill
         fields = [
-            'id', 'user_name', 'user_username', 'items', 'status', 'status_display', 'date_added', 'paid', 'coupon', 'pilladdress', 'gift_discount',
+            'id','pill_number','tracking_number', 'user_name', 'user_username', 'items', 'status', 'status_display', 'date_added', 'paid', 'coupon', 'pilladdress', 'gift_discount',
             'price_without_coupons_or_gifts', 'coupon_discount', 'gift_discount', 'shipping_price', 'final_price', 'status_logs', 'pay_requests'
         ]
         read_only_fields = [
-            'id', 'user_name', 'user_username', 'items', 'status', 'status_display', 'date_added', 'paid', 'coupon', 'pilladdress', 'gift_discount',
+            'id','pill_number', 'tracking_number','user_name', 'user_username', 'items', 'status', 'status_display', 'date_added', 'paid', 'coupon', 'pilladdress', 'gift_discount',
             'price_without_coupons_or_gifts', 'coupon_discount', 'gift_discount', 'shipping_price', 'final_price', 'status_logs', 'pay_requests'
         ]
 

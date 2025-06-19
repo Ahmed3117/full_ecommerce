@@ -318,6 +318,8 @@ class OrderAnalysisView(APIView):
     """
     Consolidated order and pill analysis
     """
+    permission_classes = [IsAdminUser] # Recommended to protect this endpoint
+
     def get(self, request):
         # 1. Pill status counts
         pill_status = Pill.objects.values('status').annotate(
@@ -344,7 +346,12 @@ class OrderAnalysisView(APIView):
             'product__id', 'product__name'
         ).annotate(
             total_sold=Sum('quantity'),
-            total_revenue=Sum(F('quantity') * F('price_at_sale'))
+            # Use Coalesce to handle cases where Sum might return None
+            total_revenue=Coalesce(Sum(F('quantity') * F('price_at_sale')), 0, output_field=FloatField()),
+            total_native_price=Coalesce(Sum(F('quantity') * F('native_price_at_sale')), 0, output_field=FloatField())
+        ).annotate(
+            # Calculate the profit, named as requested
+            total_native_revenue=F('total_revenue') - F('total_native_price')
         ).order_by('-total_sold')[:10]
         
         return Response({
@@ -352,6 +359,8 @@ class OrderAnalysisView(APIView):
             'pill_item_status_counts': item_status_counts,
             'best_selling_products': list(best_sellers)
         })
+
+
 
 class CustomerActivityView(APIView):
     """
@@ -399,6 +408,7 @@ class CustomerActivityView(APIView):
             },
             'government_activity': formatted_gov
         })
+
 
 class StoreAnalyticsView(APIView):
     """
