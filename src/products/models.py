@@ -1,13 +1,13 @@
 import random
 import string
 from django.db import models, transaction
-from django.utils import timezone
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.db.models import Sum
 from products.utils import send_whatsapp_message
 from accounts.models import User
 from core import settings
+from django.utils import timezone
 
 GOVERNMENT_CHOICES = [
     ('1', 'Cairo'),
@@ -82,6 +82,10 @@ def create_random_coupon():
 class Category(models.Model):
     name = models.CharField(max_length=100, unique=True)
     image = models.ImageField(upload_to='categories/', null=True, blank=True)
+    created_at = models.DateTimeField(default=timezone.now)  
+
+    class Meta:
+        ordering = ['-created_at']  
 
     def __str__(self):
         return self.name
@@ -89,6 +93,11 @@ class Category(models.Model):
 class SubCategory(models.Model):
     name = models.CharField(max_length=100)
     category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name='subcategories')
+    created_at = models.DateTimeField(default=timezone.now)  
+
+    class Meta:
+        ordering = ['-created_at']  
+        verbose_name_plural = 'Sub Categories'
 
     def __str__(self):
         return f"{self.category.name} - {self.name}"
@@ -96,7 +105,26 @@ class SubCategory(models.Model):
 class Brand(models.Model):
     name = models.CharField(max_length=100, unique=True)
     logo = models.ImageField(upload_to='brands/', null=True, blank=True)
+    created_at = models.DateTimeField(default=timezone.now)  
 
+    class Meta:
+        ordering = ['-created_at']  
+
+    def __str__(self):
+        return self.name
+
+class Subject(models.Model):
+    name = models.CharField(max_length=150)
+    created_at = models.DateTimeField(auto_now_add=True)
+    def __str__(self):
+        return self.name
+    
+class Teacher(models.Model):
+    name = models.CharField(max_length=150)
+    bio = models.TextField(null=True, blank=True)
+    subject = models.ForeignKey(Subject, on_delete=models.CASCADE, related_name='teachers')
+    created_at = models.DateTimeField(auto_now_add=True)
+    
     def __str__(self):
         return self.name
 
@@ -104,6 +132,8 @@ class Product(models.Model):
     name = models.CharField(max_length=100)
     category = models.ForeignKey(Category, on_delete=models.CASCADE, null=True, blank=True, related_name='products')
     sub_category = models.ForeignKey(SubCategory, on_delete=models.CASCADE, null=True, blank=True, related_name='products')
+    subject = models.ForeignKey(Subject, on_delete=models.CASCADE, null=True, blank=True, related_name='products')
+    teacher = models.ForeignKey(Teacher, on_delete=models.CASCADE, null=True, blank=True, related_name='products')
     brand = models.ForeignKey(Brand, on_delete=models.CASCADE, null=True, blank=True, related_name='products')
     price = models.FloatField(null=True, blank=True)
     threshold = models.PositiveIntegerField(
@@ -177,7 +207,6 @@ class Product(models.Model):
 
         return None  # Explicitly return None if no image is found
 
-
     def images(self):
         return self.images.all()
 
@@ -210,6 +239,9 @@ class Product(models.Model):
     def __str__(self):
         return self.name
 
+    class Meta:
+        ordering = ['-date_added']
+        
 class SpecialProduct(models.Model):
     product = models.ForeignKey(
         Product,
@@ -247,10 +279,13 @@ class ProductImage(models.Model):
         related_name='images'
     )
     image = models.ImageField(upload_to='product_images/')
+    created_at = models.DateTimeField(default=timezone.now)  
+
+    class Meta:
+        ordering = ['-created_at']  
 
     def __str__(self):
         return f"Image for {self.product.name}"
-
 class ProductDescription(models.Model):
     product = models.ForeignKey(
         Product, 
@@ -274,10 +309,13 @@ class ProductDescription(models.Model):
 class Color(models.Model):
     name = models.CharField(max_length=50, unique=True)
     degree = models.CharField(max_length=50)
+    created_at = models.DateTimeField(default=timezone.now)  # Added
+
+    class Meta:
+        ordering = ['-created_at']  # Added
 
     def __str__(self):
         return self.name
-
 class ProductAvailability(models.Model):
     product = models.ForeignKey(
         Product,
@@ -300,6 +338,7 @@ class ProductAvailability(models.Model):
 
     class Meta:
         unique_together = ['product', 'size', 'color']
+        ordering = ['-date_added'] 
 
     def __str__(self):
         return f"{self.product.name} - {self.size} - {self.color.name if self.color else 'No Color'}"
@@ -319,9 +358,13 @@ class ProductAvailability(models.Model):
 class Shipping(models.Model):
     government = models.CharField(choices=GOVERNMENT_CHOICES, max_length=2)
     shipping_price = models.FloatField(default=0.0)
+    
 
     def __str__(self):
         return f"{self.get_government_display()} - {self.shipping_price}"
+
+    class Meta:
+        ordering = ['government']  
 
 class PillItem(models.Model):
     pill = models.ForeignKey('Pill', on_delete=models.CASCADE, null=True, blank=True, related_name='pill_items')
@@ -385,7 +428,6 @@ class Pill(models.Model):
         unique=True,
         default=generate_pill_number
     )
-
     def save(self, *args, **kwargs):
         if not self.pill_number:
             self.pill_number = generate_pill_number()
@@ -512,6 +554,7 @@ class Pill(models.Model):
 
     class Meta:
         verbose_name_plural = 'Bills'
+        ordering = ['-date_added']
 
     def __str__(self):
         return f"Pill ID: {self.id} - Status: {self.get_status_display()} - Date: {self.date_added}"
@@ -595,6 +638,9 @@ class PillAddress(models.Model):
     government = models.CharField(choices=GOVERNMENT_CHOICES, max_length=2, null=True, blank=True)
     city = models.CharField(max_length=100, null=True, blank=True)
     pay_method = models.CharField(choices=PAYMENT_CHOICES, max_length=2, default="c")
+    created_at = models.DateTimeField(default=timezone.now)
+    class Meta:
+        ordering = ['-created_at']
 
     def __str__(self):
         return f"{self.name} - {self.address}"
@@ -604,9 +650,12 @@ class PillStatusLog(models.Model):
     status = models.CharField(choices=PILL_STATUS_CHOICES, max_length=1)
     changed_at = models.DateTimeField(auto_now_add=True)
 
+    class Meta:
+        ordering = ['-changed_at'] 
+
     def __str__(self):
         return f"{self.pill.id} - {self.get_status_display()} at {self.changed_at}"
-
+    
 class CouponDiscount(models.Model):
     coupon = models.CharField(max_length=100, blank=True, null=True, editable=False)
     discount_value = models.FloatField(null=True, blank=True)
@@ -616,6 +665,7 @@ class CouponDiscount(models.Model):
     is_wheel_coupon = models.BooleanField(default=False)
     user = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True)
     min_order_value = models.FloatField(null=True, blank=True)
+    created_at = models.DateTimeField(default=timezone.now)
 
     def save(self, *args, **kwargs):
         if not self.coupon:
@@ -624,6 +674,9 @@ class CouponDiscount(models.Model):
 
     def __str__(self):
         return self.coupon
+
+    class Meta:
+        ordering = ['-created_at']
 
 class Rating(models.Model):
     product = models.ForeignKey(
@@ -645,6 +698,9 @@ class Rating(models.Model):
     def star_ranges(self):
         return range(int(self.star_number)), range(5 - int(self.star_number))
 
+    class Meta:
+        ordering = ['-date_added'] 
+
 class Discount(models.Model):
     product = models.ForeignKey(Product, on_delete=models.CASCADE, null=True, blank=True, related_name='discounts')
     category = models.ForeignKey(Category, on_delete=models.CASCADE, null=True, blank=True, related_name='discounts')
@@ -652,6 +708,10 @@ class Discount(models.Model):
     discount_start = models.DateTimeField()
     discount_end = models.DateTimeField()
     is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ['-created_at']
 
     def __str__(self):
         target = f"Product: {self.product.name}" if self.product else f"Category: {self.category.name}"
@@ -680,6 +740,8 @@ class PayRequest(models.Model):
 
     def __str__(self):
         return f"PayRequest for Pill {self.pill.id} - Applied: {self.is_applied}"
+    class Meta:
+        ordering = ['-date'] 
 
 class LovedProduct(models.Model):
     user = models.ForeignKey(
@@ -711,6 +773,7 @@ class StockAlert(models.Model):
             ['product', 'user'],
             ['product', 'email']
         ]
+        ordering = ['-created_at']
 
 class PriceDropAlert(models.Model):
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
@@ -725,6 +788,7 @@ class PriceDropAlert(models.Model):
             ['product', 'user'],
             ['product', 'email']
         ]
+        ordering = ['-created_at'] 
 
 class SpinWheelDiscount(models.Model):
     name = models.CharField(max_length=100)
@@ -748,10 +812,12 @@ class SpinWheelDiscount(models.Model):
         default=100,
         help_text="Maximum number of users who can win this discount"
     )
-
+    created_at = models.DateTimeField(default=timezone.now)
     def __str__(self):
         return f"{self.name} (Winners: {self.winner_count()}/{self.max_winners})"
 
+    class Meta:
+        ordering = ['-created_at']
     def is_available(self):
         now = timezone.now()
         return (
@@ -821,10 +887,11 @@ class PillGift(models.Model):
         validators=[MinValueValidator(0)],
         help_text="Maximum order value to apply the gift (optional)"
     )
-
+    created_at = models.DateTimeField(default=timezone.now)
     class Meta:
         verbose_name = "Pill Gift"
         verbose_name_plural = "Pill Gifts"
+        ordering = ['-created_at']
 
     def __str__(self):
         start_str = self.start_date.strftime("%Y-%m-%d") if self.start_date else "Any"

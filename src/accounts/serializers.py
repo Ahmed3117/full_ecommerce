@@ -1,12 +1,16 @@
 from django.db.models import Count, Sum, F
 from rest_framework import serializers
+from rest_framework.fields import ImageField
 
 from products.models import PILL_STATUS_CHOICES, LovedProduct, Pill, Product
 from products.serializers import LovedProductSerializer, PillDetailSerializer
 from .models import User, UserAddress, UserProfileImage
 from django.db.models import Count, Sum, Case, When, Value, FloatField
 from django.db.models.functions import Coalesce
+
 class UserProfileImageSerializer(serializers.ModelSerializer):
+    image = ImageField(use_url=True) # Explicitly set use_url to True
+
     class Meta:
         model = UserProfileImage
         fields = ['id', 'image', 'created_at', 'updated_at']
@@ -35,7 +39,7 @@ class UserSerializer(serializers.ModelSerializer):
         model = User
         fields = (
             'id', 'username', 'email', 'password', 'name','government', 'city',
-            'is_staff', 'is_superuser', 'user_type', 'phone','phone2',
+            'is_staff', 'is_superuser', 'user_type', 'phone','phone2','parent_phone',
             'year', 'address', 'user_profile_image',
             'user_profile_image_id','created_at', 
             'cart_items_count', 'last_cart_added',
@@ -48,6 +52,7 @@ class UserSerializer(serializers.ModelSerializer):
             'user_type': {'required': False, 'allow_null': True},
             'phone': {'required': False, 'allow_null': True, 'allow_blank': True},
             'phone2': {'required': False, 'allow_null': True, 'allow_blank': True},
+            'parent_phone': {'required': False, 'allow_null': True, 'allow_blank': True},
             'year': {'required': False, 'allow_null': True},
             'address': {'required': False, 'allow_null': True, 'allow_blank': True},
         }
@@ -107,6 +112,7 @@ class UserSerializer(serializers.ModelSerializer):
             user_type=validated_data.get('user_type', None),
             phone=validated_data.get('phone', None),
             phone2=validated_data.get('phone2', None),
+            parent_phone=validated_data.get('parent_phone', None),
             year=validated_data.get('year', None),
             address=validated_data.get('address', None),
             government=validated_data.get('government', None),
@@ -157,18 +163,20 @@ class UserProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = [
-            'id', 'username', 'email', 'name', 'user_type', 'phone','phone2', 'year',
+            'id', 'username', 'email', 'name', 'user_type', 'phone','phone2','parent_phone', 'year',
             'address', 'user_profile_image', 'addresses', 'pills',
             'loved_products', 'total_spent', 'favorite_category'
         ]
 
     def get_pills(self, obj):
         pills = Pill.objects.filter(user=obj).order_by('-date_added')[:10]
-        return PillDetailSerializer(pills, many=True).data
+        # Pass context to nested serializer for full image URLs if Pills had images
+        return PillDetailSerializer(pills, many=True, context=self.context).data
 
     def get_loved_products(self, obj):
         loved_products = LovedProduct.objects.filter(user=obj).order_by('-created_at')[:10]
-        return LovedProductSerializer(loved_products, many=True).data
+        # Pass context to nested serializer for full image URLs if LovedProducts had images
+        return LovedProductSerializer(loved_products, many=True, context=self.context).data
 
     def get_total_spent(self, obj):
         return Pill.objects.filter(
@@ -180,7 +188,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
 
     def get_favorite_category(self, obj):
         favorite = Product.objects.filter(
-            sales__pill__user=obj
+            pill_items__pill__user=obj  
         ).values(
             'category__name'
         ).annotate(
@@ -200,7 +208,7 @@ class UserDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = [
-            'id', 'username', 'name', 'email', 'phone','phone2', 'user_type', 'year',
+            'id', 'username', 'name', 'email', 'phone','phone2','parent_phone', 'user_type', 'year',
             'government', 'city', 'address', 'created_at', 'user_profile_image',
             'addresses', 'pill_stats', 'loved_products', 'financial_summary',
             'cart_items', 'last_cart_added' 
@@ -231,6 +239,8 @@ class UserDetailSerializer(serializers.ModelSerializer):
         }
     
     def get_loved_products(self, obj):
+        # You might need to adjust this if LovedProduct has an image,
+        # but the request context is passed if needed.
         return obj.loved_products.order_by('-created_at')[:10].values(
             'id', 'product__name', 'created_at'
         )
@@ -260,7 +270,8 @@ class UserDetailSerializer(serializers.ModelSerializer):
             status__isnull=True
         ).select_related('product', 'color')
         
-        return PillItemSerializer(cart_items, many=True).data
+        # Pass context to nested serializer for full image URLs
+        return PillItemSerializer(cart_items, many=True, context=self.context).data
 
     def get_last_cart_added(self, obj):
         from products.models import PillItem
@@ -271,6 +282,3 @@ class UserDetailSerializer(serializers.ModelSerializer):
         ).order_by('-date_added').first()
         
         return last_item.date_added if last_item else None
-
-
-

@@ -39,12 +39,25 @@ class BrandListView(generics.ListAPIView):
     serializer_class = BrandSerializer
     pagination_class = None
 
+class SubjectListView(generics.ListAPIView):
+    queryset = Subject.objects.all()
+    serializer_class = SubjectSerializer
+    filter_backends = [DjangoFilterBackend, rest_filters.SearchFilter]
+    search_fields = ['name', ]
+ 
+class TeacherListView(generics.ListAPIView):
+    queryset = Teacher.objects.all()
+    serializer_class = TeacherSerializer
+    filter_backends = [DjangoFilterBackend, rest_filters.SearchFilter]
+    filterset_fields = ['subject']
+    search_fields = ['name', 'subject__name']
+
 class ProductListView(generics.ListAPIView):
     queryset = Product.objects.all()
     serializer_class = ProductSerializer
     filter_backends = [DjangoFilterBackend, rest_filters.SearchFilter]
     filterset_class = ProductFilter
-    search_fields = ['name', 'category__name', 'brand__name', 'description']
+    search_fields = ['name', 'category__name', 'brand__name','subject__name' , 'teacher__name', 'description']
 
 class Last10ProductsListView(generics.ListAPIView):
     queryset = Product.objects.all()
@@ -512,7 +525,9 @@ class ProductRecommendationsView(generics.ListAPIView):
             similar_products = Product.objects.filter(
                 Q(category=current_product.category) |
                 Q(sub_category=current_product.sub_category) |
-                Q(brand=current_product.brand)
+                Q(brand=current_product.brand) |
+                Q(subject=current_product.subject) |
+                Q(teacher=current_product.teacher)
             ).exclude(id=current_product_id).distinct()
             recommendations.extend(list(similar_products))
         
@@ -712,6 +727,33 @@ class BrandRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Brand.objects.all()
     serializer_class = BrandSerializer
     # permission_classes = [IsAdminUser]
+
+class SubjectListCreateView(generics.ListCreateAPIView):
+    queryset = Subject.objects.all()
+    serializer_class = SubjectSerializer
+    filter_backends = [DjangoFilterBackend, rest_filters.SearchFilter]
+    search_fields = ['name']
+    # permission_classes = [IsAdminUser]
+
+class SubjectRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = Subject.objects.all()
+    serializer_class = SubjectSerializer
+    # permission_classes = [IsAdminUser]
+    lookup_field = 'id'
+
+class TeacherListCreateView(generics.ListCreateAPIView):
+    queryset = Teacher.objects.all()
+    serializer_class = TeacherSerializer
+    filter_backends = [DjangoFilterBackend, rest_filters.SearchFilter]
+    filterset_fields = ['subject']
+    search_fields = ['name', 'subject__name']
+    # permission_classes = [IsAdminUser]
+
+class TeacherRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = Teacher.objects.all()
+    serializer_class = TeacherSerializer
+    # permission_classes = [IsAdminUser]
+    lookup_field = 'id'
 
 class ColorListCreateView(generics.ListCreateAPIView):
     queryset = Color.objects.all()

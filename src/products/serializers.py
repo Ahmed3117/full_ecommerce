@@ -11,7 +11,7 @@ from .models import (
     Category, CouponDiscount, Discount, LovedProduct, PayRequest, PillAddress, PillGift,
     PillItem, PillStatusLog, PriceDropAlert, ProductDescription, Shipping,
     SpecialProduct, SpinWheelDiscount, SpinWheelResult, SpinWheelSettings, StockAlert,
-    SubCategory, Brand, Product, ProductImage, ProductAvailability, Rating, Color, Pill
+    SubCategory, Brand, Product, ProductImage, ProductAvailability, Rating, Color, Pill, Subject, Teacher
 )
 
 class SubCategorySerializer(serializers.ModelSerializer):
@@ -35,6 +35,20 @@ class BrandSerializer(serializers.ModelSerializer):
     class Meta:
         model = Brand
         fields = '__all__'
+
+class SubjectSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Subject
+        fields = '__all__'
+
+class TeacherSerializer(serializers.ModelSerializer):
+    subject_name = serializers.SerializerMethodField()
+    class Meta:
+        model = Teacher
+        fields = ['id', 'name', 'bio','subject','subject_name']
+
+    def get_subject_name(self, obj):
+        return obj.subject.name if obj.subject else None
 
 class ProductDescriptionSerializer(serializers.ModelSerializer):
     class Meta:
@@ -144,6 +158,10 @@ class ProductSerializer(serializers.ModelSerializer):
     descriptions = ProductDescriptionSerializer(many=True, read_only=True)
     category_id = serializers.SerializerMethodField()
     category_name = serializers.SerializerMethodField()
+    subject_id = serializers.SerializerMethodField()
+    subject_name = serializers.SerializerMethodField()
+    teacher_id = serializers.SerializerMethodField()
+    teacher_name = serializers.SerializerMethodField()
     sub_category_id = serializers.SerializerMethodField()
     sub_category_name = serializers.SerializerMethodField()
     brand_id = serializers.SerializerMethodField()
@@ -152,7 +170,7 @@ class ProductSerializer(serializers.ModelSerializer):
     class Meta:
         model = Product
         fields = [
-            'id', 'name','category','sub_category','brand', 'category_id', 'category_name', 'sub_category_id', 'sub_category_name',
+            'id', 'name','category','sub_category','brand','subject' ,'teacher' , 'category_id', 'category_name', 'subject_id' ,'subject_name' , 'teacher_id' ,'teacher_name', 'sub_category_id', 'sub_category_name',
             'brand_id', 'brand_name', 'price', 'description', 'date_added', 'discounted_price',
             'has_discount', 'current_discount', 'discount_expiry', 'main_image', 'images', 'number_of_ratings',
             'average_rating', 'total_quantity', 'available_colors', 'available_sizes', 'availabilities',
@@ -171,6 +189,14 @@ class ProductSerializer(serializers.ModelSerializer):
     def get_sub_category_name(self, obj):
         return obj.sub_category.name if obj.sub_category else None
 
+    def get_subject_id(self, obj):
+        return obj.subject.id if obj.subject else None
+    def get_subject_name(self, obj):
+        return obj.subject.name if obj.subject else None
+    def get_teacher_id(self, obj):
+        return obj.teacher.id if obj.teacher else None
+    def get_teacher_name(self, obj):
+        return obj.teacher.name if obj.teacher else None
     def get_brand_id(self, obj):
         return obj.brand.id if obj.brand else None
 

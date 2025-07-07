@@ -1,6 +1,6 @@
 from django.db import models
 from django.core.validators import FileExtensionValidator
-
+from django.utils import timezone
 from accounts.models import GOVERNMENT_CHOICES, User
 
 class StoreRequest(models.Model):
@@ -50,6 +50,8 @@ class StoreRequest(models.Model):
 
     def __str__(self):
         return f"Store Request from {self.first_name} {self.last_name}"
+    class Meta:
+        ordering = ['-date_added']  
 
 
 class Store(models.Model):
@@ -85,9 +87,13 @@ class Store(models.Model):
     instagram_link = models.URLField(null=True, blank=True)
     youtube_link = models.URLField(null=True, blank=True)
     tiktok_link = models.URLField(null=True, blank=True)
+    created_at = models.DateTimeField(default=timezone.now) 
 
     def __str__(self):
         return self.name
+    
+    class Meta:
+        ordering = ['-created_at']
 
 
 class StoreReporting(models.Model):

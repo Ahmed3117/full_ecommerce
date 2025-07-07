@@ -50,6 +50,9 @@ class UserProfileImage(models.Model):
 
     def __str__(self):
         return f"Profile Image {self.id}"
+    
+    class Meta:
+        ordering = ['-created_at'] 
 
 
 class User(AbstractUser):
@@ -60,6 +63,7 @@ class User(AbstractUser):
     user_type = models.CharField(max_length=20, choices=USER_TYPE_CHOICES, default="student", null=True, blank=True)
     phone = models.CharField(max_length=20, null=True, blank=True)
     phone2 = models.CharField(max_length=20, null=True, blank=True)
+    parent_phone = models.CharField(max_length=20, null=True, blank=True, help_text="Only applicable for students")
     year = models.CharField(
         max_length=20,
         choices=YEAR_CHOICES,
@@ -81,6 +85,9 @@ class User(AbstractUser):
 
     def __str__(self):
         return self.name if self.name else self.username
+    
+    class Meta:
+        ordering = ['-created_at']
 
 
 class UserAddress(models.Model):

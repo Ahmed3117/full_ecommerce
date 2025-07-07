@@ -47,7 +47,8 @@ def signin(request):
 
     try:
         refresh = RefreshToken.for_user(user)
-        serializer = UserSerializer(user)
+        # Pass the request object into the serializer's context
+        serializer = UserSerializer(user, context={'request': request})
         user_data = serializer.data
         user_data['is_admin'] = user.is_staff or user.is_superuser
 
