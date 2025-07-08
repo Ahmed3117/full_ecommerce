@@ -8,6 +8,7 @@ from rest_framework import generics, status
 from rest_framework.exceptions import ValidationError
 from rest_framework import filters as rest_filters
 from rest_framework.filters import OrderingFilter
+from accounts.pagination import CustomPageNumberPagination
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, IsAdminUser, AllowAny
@@ -59,23 +60,85 @@ class ProductListView(generics.ListAPIView):
     filterset_class = ProductFilter
     search_fields = ['name', 'category__name', 'brand__name','subject__name' , 'teacher__name', 'description']
 
-class Last10ProductsListView(generics.ListAPIView):
-    queryset = Product.objects.all()
-    serializer_class = ProductSerializer
-    filter_backends = [DjangoFilterBackend, rest_filters.SearchFilter]
-    filterset_class = ProductFilter
 
 class ProductDetailView(generics.RetrieveAPIView):
     queryset = Product.objects.all()
     serializer_class = ProductSerializer
     lookup_field = 'id'
 
+class Last10ProductsListView(generics.ListAPIView):
+    queryset = Product.objects.all()
+    serializer_class = ProductSerializer
+    filter_backends = [DjangoFilterBackend, rest_filters.SearchFilter]
+    filterset_class = ProductFilter
+
 class ActiveSpecialProductsView(generics.ListAPIView):
     serializer_class = SpecialProductSerializer
     permission_classes = [AllowAny]
 
     def get_queryset(self):
-        return SpecialProduct.objects.filter(is_active=True).order_by('-order')[:10]
+        return SpecialProduct.objects.filter(is_active=True).order_by('-order')
+    
+class ActiveBestProductsView(generics.ListAPIView):
+    serializer_class = BestProductSerializer
+    permission_classes = [AllowAny]
+
+    def get_queryset(self):
+        return BestProduct.objects.filter(is_active=True).order_by('-order')
+
+
+
+class CombinedProductsView(APIView):
+    permission_classes = [AllowAny]
+    
+    def get(self, request, *args, **kwargs):
+        # Get limit parameter with default of 10
+        limit = int(request.query_params.get('limit', 10))
+        
+        # Prepare response data
+        data = {
+            'last_products': self.get_last_products(limit),
+            'special_products': self.get_special_products(limit),
+            'best_products': self.get_best_products(limit),
+            'important_products': self.get_important_products(limit),
+        }
+        
+        return Response(data, status=status.HTTP_200_OK)
+    
+    def get_last_products(self, limit):
+        queryset = Product.objects.all().order_by('-id')[:limit]
+        serializer = ProductSerializer(queryset, many=True)
+        return serializer.data
+    
+    def get_special_products(self, limit):
+        # Get the special products with their related product data
+        special_products = SpecialProduct.objects.filter(
+            is_active=True
+        ).order_by('-order')[:limit].select_related('product')
+        
+        # Extract the products and serialize them
+        products = [sp.product for sp in special_products]
+        serializer = ProductSerializer(products, many=True)
+        return serializer.data
+    
+    def get_best_products(self, limit):
+        # Get the best products with their related product data
+        best_products = BestProduct.objects.filter(
+            is_active=True
+        ).order_by('-order')[:limit].select_related('product')
+        
+        # Extract the products and serialize them
+        products = [bp.product for bp in best_products]
+        serializer = ProductSerializer(products, many=True)
+        return serializer.data
+    
+    def get_important_products(self, limit):
+        queryset = Product.objects.filter(
+            is_important=True
+        ).order_by('-date_added')[:limit]
+        serializer = ProductSerializer(queryset, many=True)
+        return serializer.data
+
 
 class UserCartView(generics.ListAPIView):
     serializer_class = UserCartSerializer
@@ -739,7 +802,7 @@ class SubjectRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Subject.objects.all()
     serializer_class = SubjectSerializer
     # permission_classes = [IsAdminUser]
-    lookup_field = 'id'
+    
 
 class TeacherListCreateView(generics.ListCreateAPIView):
     queryset = Teacher.objects.all()
@@ -753,7 +816,7 @@ class TeacherRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Teacher.objects.all()
     serializer_class = TeacherSerializer
     # permission_classes = [IsAdminUser]
-    lookup_field = 'id'
+    
 
 class ColorListCreateView(generics.ListCreateAPIView):
     queryset = Color.objects.all()
@@ -772,6 +835,7 @@ class ProductListCreateView(generics.ListCreateAPIView):
     filter_backends = [DjangoFilterBackend, rest_filters.SearchFilter]
     filterset_class = ProductFilter
     search_fields = ['name', 'category__name', 'brand__name', 'description']
+    pagination_class = CustomPageNumberPagination
     # permission_classes = [IsAdminUser]
 
 class ProductListBreifedView(generics.ListCreateAPIView):
@@ -858,8 +922,9 @@ class ProductDescriptionRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroy
 class SpecialProductListCreateView(generics.ListCreateAPIView):
     queryset = SpecialProduct.objects.all()
     serializer_class = SpecialProductSerializer
-    filter_backends = [DjangoFilterBackend]
+    filter_backends = [DjangoFilterBackend, rest_filters.SearchFilter]
     filterset_fields = ['is_active', 'product']
+    search_fields = ['product__name', 'product__category__name', 'product__brand__name']
     ordering_fields = ['order', 'created_at']
     # permission_classes = [IsAdminUser]
 
@@ -869,6 +934,23 @@ class SpecialProductListCreateView(generics.ListCreateAPIView):
 class SpecialProductRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
     queryset = SpecialProduct.objects.all()
     serializer_class = SpecialProductSerializer
+    # permission_classes = [IsAdminUser]
+
+class BestProductListCreateView(generics.ListCreateAPIView):
+    queryset = BestProduct.objects.all()
+    serializer_class = BestProductSerializer
+    filter_backends = [DjangoFilterBackend, rest_filters.SearchFilter]
+    filterset_fields = ['is_active', 'product']
+    search_fields = ['product__name', 'product__category__name', 'product__brand__name']
+    ordering_fields = ['order', 'created_at']
+    # permission_classes = [IsAdminUser]
+
+    def perform_create(self, serializer):
+        serializer.save()
+
+class BestProductRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = BestProduct.objects.all()
+    serializer_class = BestProductSerializer
     # permission_classes = [IsAdminUser]
 
 from rest_framework import filters
@@ -932,7 +1014,7 @@ class PillListCreateView(generics.ListCreateAPIView):
     serializer_class = PillCreateSerializer
     filter_backends = [DjangoFilterBackend, rest_filters.SearchFilter]
     filterset_class = PillFilter
-    search_fields = ['pilladdress__phone', 'pilladdress__government', 'pilladdress__name', 'user__name', 'user__username', 'pill_number']
+    search_fields = ['pilladdress__phone', 'pilladdress__government', 'pilladdress__name', 'user__name', 'user__username', 'pill_number','user__phone','user__parent_phone']
     # permission_classes = [IsAdminUser]
 
     def get_serializer_class(self):

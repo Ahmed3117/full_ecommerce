@@ -14,6 +14,8 @@ urlpatterns = [
     path('products/<int:id>/', views.ProductDetailView.as_view(), name='product-detail'),
     path('last-products/', views.Last10ProductsListView.as_view(), name='last-products'),
     path('special-products/active/', views.ActiveSpecialProductsView.as_view(), name='special-products'),
+    path('best-products/active/', views.ActiveBestProductsView.as_view(), name='best-products'),
+    path('combined-analysis/', views.CombinedProductsView.as_view(), name='combined-analysis'),
     path('cart/', views.UserCartView.as_view(), name='user-cart'),
     path('cart/add/', views.PillItemCreateView.as_view(), name='cart-add'),
     path('cart/update/<int:pk>/', views.PillItemUpdateView.as_view(), name='cart-update'),
@@ -67,6 +69,9 @@ urlpatterns = [
     path('dashboard/product-descriptions/<int:pk>/', views.ProductDescriptionRetrieveUpdateDestroyView.as_view(), name='admin-product-description-detail'),
     path('dashboard/special-products/', views.SpecialProductListCreateView.as_view(), name='admin-special-product-list-create'),
     path('dashboard/special-products/<int:pk>/', views.SpecialProductRetrieveUpdateDestroyView.as_view(), name='admin-special-product-detail'),
+    path('dashboard/best-products/', views.BestProductListCreateView.as_view(), name='admin-best-product-list-create'),
+    path('dashboard/best-products/<int:pk>/', views.BestProductRetrieveUpdateDestroyView.as_view(), name='admin-best-product-detail'),
+
     
     # PillItems endpoints
     path('dashboard/pill-items/', views.PillItemListCreateView.as_view(), name='pillitem-list'),

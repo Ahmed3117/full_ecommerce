@@ -8,7 +8,7 @@ from django.db import transaction
 from accounts.models import User
 from core import settings
 from .models import (
-    Category, CouponDiscount, Discount, LovedProduct, PayRequest, PillAddress, PillGift,
+    BestProduct, Category, CouponDiscount, Discount, LovedProduct, PayRequest, PillAddress, PillGift,
     PillItem, PillStatusLog, PriceDropAlert, ProductDescription, Shipping,
     SpecialProduct, SpinWheelDiscount, SpinWheelResult, SpinWheelSettings, StockAlert,
     SubCategory, Brand, Product, ProductImage, ProductAvailability, Rating, Color, Pill, Subject, Teacher
@@ -170,7 +170,7 @@ class ProductSerializer(serializers.ModelSerializer):
     class Meta:
         model = Product
         fields = [
-            'id', 'name','category','sub_category','brand','subject' ,'teacher' , 'category_id', 'category_name', 'subject_id' ,'subject_name' , 'teacher_id' ,'teacher_name', 'sub_category_id', 'sub_category_name',
+            'id', 'name','type','category','sub_category','brand','subject' ,'teacher' , 'category_id', 'category_name', 'subject_id' ,'subject_name' , 'teacher_id' ,'teacher_name', 'sub_category_id', 'sub_category_name',
             'brand_id', 'brand_name', 'price', 'description', 'date_added', 'discounted_price',
             'has_discount', 'current_discount', 'discount_expiry', 'main_image', 'images', 'number_of_ratings',
             'average_rating', 'total_quantity', 'available_colors', 'available_sizes', 'availabilities',
@@ -273,8 +273,6 @@ class ProductSerializer(serializers.ModelSerializer):
             return main_image.url
         return None
 
-
-
     def get_number_of_ratings(self, obj):
         return obj.number_of_ratings()
 
@@ -296,7 +294,7 @@ class ProductSerializer(serializers.ModelSerializer):
 class ProductBreifedSerializer(serializers.ModelSerializer):
     class Meta:
         model = Product
-        fields = ['id', 'name']
+        fields = ['id', 'name','type']
 
 class CouponCodeField(serializers.Field):
     def to_internal_value(self, data):
@@ -320,6 +318,22 @@ class SpecialProductSerializer(serializers.ModelSerializer):
         model = SpecialProduct
         fields = [
             'id', 'product', 'product_id', 'special_image',
+            'order', 'is_active', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['created_at', 'updated_at']
+
+class BestProductSerializer(serializers.ModelSerializer):
+    product = ProductSerializer(read_only=True)
+    product_id = serializers.PrimaryKeyRelatedField(
+        queryset=Product.objects.all(),
+        source='product',
+        write_only=True
+    )
+
+    class Meta:
+        model = BestProduct
+        fields = [
+            'id', 'product', 'product_id',
             'order', 'is_active', 'created_at', 'updated_at'
         ]
         read_only_fields = ['created_at', 'updated_at']
@@ -807,18 +821,23 @@ class PillCreateSerializer(serializers.ModelSerializer):
     items = PillItemCreateSerializer(many=True, required=False)
     user_name = serializers.SerializerMethodField()
     user_username = serializers.SerializerMethodField()
+    user_phone = serializers.SerializerMethodField()
+    user_parent_phone = serializers.SerializerMethodField()
     user = serializers.HiddenField(default=serializers.CurrentUserDefault())
 
     class Meta:
         model = Pill
-        fields = ['id', 'user', 'user_name', 'user_username', 'items', 'status', 'date_added', 'paid']
+        fields = ['id', 'user', 'user_name', 'user_username','user_phone', 'user_parent_phone','items', 'status', 'date_added', 'paid']
         read_only_fields = ['id', 'status', 'date_added', 'paid']
-
     def get_user_name(self, obj):
         return obj.user.name
 
     def get_user_username(self, obj):
         return obj.user.username
+    def get_user_phone(self, obj):
+        return obj.user.phone if obj.user else None
+    def get_user_parent_phone(self, obj):
+        return obj.user.parent_phone if obj.user else None
 
     def create(self, validated_data):
         user = validated_data['user']
@@ -941,6 +960,8 @@ class PillDetailSerializer(serializers.ModelSerializer):
     status_display = serializers.SerializerMethodField()
     user_name = serializers.SerializerMethodField()
     user_username = serializers.SerializerMethodField()
+    user_phone = serializers.SerializerMethodField()
+    user_parent_phone = serializers.SerializerMethodField()
     status_logs = PillStatusLogSerializer(many=True, read_only=True)
     pay_requests = PayRequestSerializer(many=True, read_only=True)
     price_without_coupons_or_gifts = serializers.SerializerMethodField()
@@ -951,7 +972,7 @@ class PillDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = Pill
         fields = [
-            'id','pill_number','tracking_number', 'user_name', 'user_username', 'items', 'status', 'status_display', 'date_added', 'paid', 'coupon', 'pilladdress', 'gift_discount',
+            'id','pill_number','tracking_number', 'user_name', 'user_username', 'user_phone','user_parent_phone' ,'items', 'status', 'status_display', 'date_added', 'paid', 'coupon', 'pilladdress', 'gift_discount',
             'price_without_coupons_or_gifts', 'coupon_discount', 'gift_discount', 'shipping_price', 'final_price', 'status_logs', 'pay_requests'
         ]
         read_only_fields = [
@@ -964,6 +985,12 @@ class PillDetailSerializer(serializers.ModelSerializer):
 
     def get_user_username(self, obj):
         return obj.user.username
+    
+    def get_user_phone(self, obj):
+        return obj.user.phone if obj.user else None
+    
+    def get_user_parent_phone(self, obj):
+        return obj.user.parent_phone if obj.user else None
     
     def get_shipping_price(self, obj):
         return obj.shipping_price()

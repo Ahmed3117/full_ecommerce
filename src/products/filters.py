@@ -14,7 +14,7 @@ class ProductFilter(filters.FilterSet):
 
     class Meta:
         model = Product
-        fields = ['category', 'sub_category', 'subject', 'teacher' ,'brand', 'has_images','is_important']
+        fields = ['category', 'sub_category', 'subject', 'teacher' ,'brand', 'has_images','is_important','type']
 
     def filter_by_discounted_price_min(self, queryset, name, value):
         now = timezone.now()
@@ -103,12 +103,10 @@ class ProductFilter(filters.FilterSet):
             return queryset.filter(~Exists(ProductImage.objects.filter(product=OuterRef('pk'))))
 
     def filter_queryset(self, queryset):
-        # Apply the filters first
+        # Apply all filters (including search)
         queryset = super().filter_queryset(queryset)
-        # Get the `limit` parameter from the query string (default to 10 if not provided)
-        limit = int(self.request.query_params.get('limit', 10))
-        # Order by `date_added` and slice the queryset
-        return queryset.order_by('-date_added')[:limit]
+        # Simply order the results without slicing
+        return queryset.order_by('-date_added')
     
     
     

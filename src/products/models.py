@@ -129,6 +129,10 @@ class Teacher(models.Model):
         return self.name
 
 class Product(models.Model):
+    product_type = [
+            ('book', 'Book'),
+            ('product', 'Product'),
+        ]
     name = models.CharField(max_length=100)
     category = models.ForeignKey(Category, on_delete=models.CASCADE, null=True, blank=True, related_name='products')
     sub_category = models.ForeignKey(SubCategory, on_delete=models.CASCADE, null=True, blank=True, related_name='products')
@@ -153,6 +157,12 @@ class Product(models.Model):
         help_text="Main image for the product"
     )
 
+    type = models.CharField(
+        max_length=20,
+        choices=product_type,
+        default='product',
+        help_text="Type of the product"
+    )
     def get_current_discount(self):
         """Returns the best active discount (either product or category level)"""
         now = timezone.now()
@@ -271,6 +281,30 @@ class SpecialProduct(models.Model):
 
     def __str__(self):
         return f"Special: {self.product.name}"
+    
+class BestProduct(models.Model):
+    product = models.ForeignKey(
+        Product,
+        on_delete=models.CASCADE,
+        related_name='best_products'
+    )
+    order = models.PositiveIntegerField(
+        default=0,
+        help_text="Ordering priority (higher numbers come first)"
+    )
+    is_active = models.BooleanField(
+        default=True,
+        help_text="Show this product"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-order', '-created_at']
+
+
+    def __str__(self):
+        return self.product.name
 
 class ProductImage(models.Model):
     product = models.ForeignKey(
