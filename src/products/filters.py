@@ -14,7 +14,7 @@ class ProductFilter(filters.FilterSet):
 
     class Meta:
         model = Product
-        fields = ['category', 'sub_category', 'subject', 'teacher' ,'brand', 'has_images','is_important','type']
+        fields = ['category', 'sub_category', 'subject', 'teacher' ,'brand', 'has_images','is_important','type','year']
 
     def filter_by_discounted_price_min(self, queryset, name, value):
         now = timezone.now()
@@ -135,7 +135,7 @@ class CategoryFilter(filters.FilterSet):
 
     class Meta:
         model = Category
-        fields = ['has_image']
+        fields = ['has_image','type']
 
     def filter_has_image(self, queryset, name, value):
         if value:

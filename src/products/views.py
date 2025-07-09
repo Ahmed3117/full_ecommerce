@@ -98,9 +98,10 @@ class CombinedProductsView(APIView):
         # Prepare response data
         data = {
             'last_products': self.get_last_products(limit),
-            'special_products': self.get_special_products(limit),
-            'best_products': self.get_best_products(limit),
             'important_products': self.get_important_products(limit),
+            'first_year_products': self.get_year_products('first-secondary', limit),
+            'second_year_products': self.get_year_products('second-secondary', limit),
+            'third_year_products': self.get_year_products('third-secondary', limit),
         }
         
         return Response(data, status=status.HTTP_200_OK)
@@ -109,6 +110,36 @@ class CombinedProductsView(APIView):
         queryset = Product.objects.all().order_by('-id')[:limit]
         serializer = ProductSerializer(queryset, many=True)
         return serializer.data
+    
+    def get_important_products(self, limit):
+        queryset = Product.objects.filter(
+            is_important=True
+        ).order_by('-date_added')[:limit]
+        serializer = ProductSerializer(queryset, many=True)
+        return serializer.data
+    
+    def get_year_products(self, year, limit):
+        queryset = Product.objects.filter(
+            year=year
+        ).order_by('-date_added')[:limit]
+        serializer = ProductSerializer(queryset, many=True)
+        return serializer.data
+
+
+class SpecialBestProductsView(APIView):
+    permission_classes = [AllowAny]
+    
+    def get(self, request, *args, **kwargs):
+        # Get limit parameter with default of 10
+        limit = int(request.query_params.get('limit', 10))
+        
+        # Prepare response data
+        data = {
+            'special_products': self.get_special_products(limit),
+            'best_products': self.get_best_products(limit),
+        }
+        
+        return Response(data, status=status.HTTP_200_OK)
     
     def get_special_products(self, limit):
         # Get the special products with their related product data
@@ -131,14 +162,6 @@ class CombinedProductsView(APIView):
         products = [bp.product for bp in best_products]
         serializer = ProductSerializer(products, many=True)
         return serializer.data
-    
-    def get_important_products(self, limit):
-        queryset = Product.objects.filter(
-            is_important=True
-        ).order_by('-date_added')[:limit]
-        serializer = ProductSerializer(queryset, many=True)
-        return serializer.data
-
 
 class UserCartView(generics.ListAPIView):
     serializer_class = UserCartSerializer

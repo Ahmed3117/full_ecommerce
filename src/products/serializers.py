@@ -29,7 +29,7 @@ class CategorySerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Category
-        fields = ['id', 'name', 'image', 'subcategories']
+        fields = ['id', 'name', 'image', 'subcategories','type']
 
 class BrandSerializer(serializers.ModelSerializer):
     class Meta:
@@ -45,7 +45,7 @@ class TeacherSerializer(serializers.ModelSerializer):
     subject_name = serializers.SerializerMethodField()
     class Meta:
         model = Teacher
-        fields = ['id', 'name', 'bio','subject','subject_name']
+        fields = ['id', 'name', 'bio','image','subject','subject_name' , 'facebook', 'instagram', 'twitter', 'youtube', 'linkedin', 'telegram', 'website']
 
     def get_subject_name(self, obj):
         return obj.subject.name if obj.subject else None
@@ -162,6 +162,7 @@ class ProductSerializer(serializers.ModelSerializer):
     subject_name = serializers.SerializerMethodField()
     teacher_id = serializers.SerializerMethodField()
     teacher_name = serializers.SerializerMethodField()
+    teacher_image = serializers.SerializerMethodField()
     sub_category_id = serializers.SerializerMethodField()
     sub_category_name = serializers.SerializerMethodField()
     brand_id = serializers.SerializerMethodField()
@@ -170,7 +171,7 @@ class ProductSerializer(serializers.ModelSerializer):
     class Meta:
         model = Product
         fields = [
-            'id', 'name','type','category','sub_category','brand','subject' ,'teacher' , 'category_id', 'category_name', 'subject_id' ,'subject_name' , 'teacher_id' ,'teacher_name', 'sub_category_id', 'sub_category_name',
+            'id', 'name','type','year','category','sub_category','brand','subject' ,'teacher' , 'category_id', 'category_name', 'subject_id' ,'subject_name' , 'teacher_id' ,'teacher_name','teacher_image', 'sub_category_id', 'sub_category_name',
             'brand_id', 'brand_name', 'price', 'description', 'date_added', 'discounted_price',
             'has_discount', 'current_discount', 'discount_expiry', 'main_image', 'images', 'number_of_ratings',
             'average_rating', 'total_quantity', 'available_colors', 'available_sizes', 'availabilities',
@@ -197,6 +198,13 @@ class ProductSerializer(serializers.ModelSerializer):
         return obj.teacher.id if obj.teacher else None
     def get_teacher_name(self, obj):
         return obj.teacher.name if obj.teacher else None
+    def get_teacher_image(self, obj):
+        if obj.teacher and obj.teacher.image:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.teacher.image.url)
+            return obj.teacher.image.url
+        return None
     def get_brand_id(self, obj):
         return obj.brand.id if obj.brand else None
 

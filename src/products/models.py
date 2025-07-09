@@ -5,7 +5,7 @@ from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.db.models import Sum
 from products.utils import send_whatsapp_message
-from accounts.models import User
+from accounts.models import YEAR_CHOICES, User
 from core import settings
 from django.utils import timezone
 
@@ -80,10 +80,19 @@ def create_random_coupon():
     return '-'.join(random.choice(letters) + random.choice(nums) + random.choice(marks) for _ in range(5))
 
 class Category(models.Model):
+    product_type = [
+        ('book', 'Book'),
+        ('product', 'Product'),
+    ]
     name = models.CharField(max_length=100, unique=True)
     image = models.ImageField(upload_to='categories/', null=True, blank=True)
     created_at = models.DateTimeField(default=timezone.now)  
-
+    type = models.CharField(
+        max_length=20,
+        choices=product_type,
+        default='product',
+        help_text="Type of the product"
+    )
     class Meta:
         ordering = ['-created_at']  
 
@@ -122,7 +131,15 @@ class Subject(models.Model):
 class Teacher(models.Model):
     name = models.CharField(max_length=150)
     bio = models.TextField(null=True, blank=True)
+    image = models.ImageField(upload_to='teachers/', null=True, blank=True)
     subject = models.ForeignKey(Subject, on_delete=models.CASCADE, related_name='teachers')
+    facebook = models.CharField(max_length=200, null=True, blank=True)
+    instagram = models.CharField(max_length=200, null=True, blank=True)
+    twitter = models.CharField(max_length=200, null=True, blank=True)
+    linkedin = models.CharField(max_length=200, null=True, blank=True)
+    youtube = models.CharField(max_length=200, null=True, blank=True)
+    telegram = models.CharField(max_length=200, null=True, blank=True)
+    website = models.CharField(max_length=200, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     
     def __str__(self):
@@ -163,6 +180,13 @@ class Product(models.Model):
         default='product',
         help_text="Type of the product"
     )
+    year = models.CharField(
+        max_length=20,
+        choices=YEAR_CHOICES,
+        null=True,
+        blank=True,
+    )
+    
     def get_current_discount(self):
         """Returns the best active discount (either product or category level)"""
         now = timezone.now()
