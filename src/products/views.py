@@ -108,23 +108,22 @@ class CombinedProductsView(APIView):
     
     def get_last_products(self, limit):
         queryset = Product.objects.all().order_by('-id')[:limit]
-        serializer = ProductSerializer(queryset, many=True)
+        serializer = ProductSerializer(queryset, many=True, context={'request': self.request})
         return serializer.data
     
     def get_important_products(self, limit):
         queryset = Product.objects.filter(
             is_important=True
         ).order_by('-date_added')[:limit]
-        serializer = ProductSerializer(queryset, many=True)
+        serializer = ProductSerializer(queryset, many=True, context={'request': self.request})
         return serializer.data
     
     def get_year_products(self, year, limit):
         queryset = Product.objects.filter(
             year=year
         ).order_by('-date_added')[:limit]
-        serializer = ProductSerializer(queryset, many=True)
+        serializer = ProductSerializer(queryset, many=True, context={'request': self.request})
         return serializer.data
-
 
 class SpecialBestProductsView(APIView):
     permission_classes = [AllowAny]
@@ -180,7 +179,50 @@ class SpecialBestProductsView(APIView):
                 **product_data
             })
         return result
+
+
+class TeacherProductsView(APIView):
+    permission_classes = [AllowAny]
     
+    def get(self, request, teacher_id, *args, **kwargs):
+        try:
+            teacher = Teacher.objects.get(pk=teacher_id)
+        except Teacher.DoesNotExist:
+            return Response(
+                {"error": "Teacher not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Get limit parameter with default of 10
+        limit = int(request.query_params.get('limit', 10))
+        
+        # Prepare response data
+        data = {
+            'teacher': TeacherSerializer(teacher, context={'request': request}).data,
+            'important_books': self.get_important_books(teacher, limit),
+            'important_products': self.get_important_products(teacher, limit),
+        }
+        
+        return Response(data, status=status.HTTP_200_OK)
+    
+    def get_important_books(self, teacher, limit):
+        queryset = Product.objects.filter(
+            teacher=teacher,
+            is_important=True,
+            type='book'
+        ).order_by('-date_added')[:limit]
+        serializer = ProductSerializer(queryset, many=True, context={'request': self.request})
+        return serializer.data
+    
+    def get_important_products(self, teacher, limit):
+        queryset = Product.objects.filter(
+            teacher=teacher,
+            is_important=True,
+            type='product'
+        ).order_by('-date_added')[:limit]
+        serializer = ProductSerializer(queryset, many=True, context={'request': self.request})
+        return serializer.data
+
 class UserCartView(generics.ListAPIView):
     serializer_class = UserCartSerializer
     permission_classes = [IsAuthenticated]

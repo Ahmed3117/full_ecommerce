@@ -17,6 +17,7 @@ urlpatterns = [
     path('best-products/active/', views.ActiveBestProductsView.as_view(), name='best-products'),
     path('combined-products/', views.CombinedProductsView.as_view(), name='combined-products'),
     path('special-best-products/', views.SpecialBestProductsView.as_view(), name='special-best-products'),
+    path('teacher-profile/<int:teacher_id>/', views.TeacherProductsView.as_view(), name='teacher-products'),
     path('cart/', views.UserCartView.as_view(), name='user-cart'),
     path('cart/add/', views.PillItemCreateView.as_view(), name='cart-add'),
     path('cart/update/<int:pk>/', views.PillItemUpdateView.as_view(), name='cart-update'),
