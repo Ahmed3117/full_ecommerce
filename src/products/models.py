@@ -138,6 +138,8 @@ class Teacher(models.Model):
     twitter = models.CharField(max_length=200, null=True, blank=True)
     linkedin = models.CharField(max_length=200, null=True, blank=True)
     youtube = models.CharField(max_length=200, null=True, blank=True)
+    whatsapp = models.CharField(max_length=200, null=True, blank=True)
+    tiktok = models.CharField(max_length=200, null=True, blank=True)
     telegram = models.CharField(max_length=200, null=True, blank=True)
     website = models.CharField(max_length=200, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)

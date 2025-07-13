@@ -33,7 +33,7 @@ class SubCategoryListView(generics.ListAPIView):
     queryset = SubCategory.objects.all()
     serializer_class = SubCategorySerializer
     filter_backends = [DjangoFilterBackend]
-    filterset_fields = ['category']
+    filterset_fields = ['category','category__type']
 
 class BrandListView(generics.ListAPIView):
     queryset = Brand.objects.all()
@@ -147,10 +147,23 @@ class SpecialBestProductsView(APIView):
             is_active=True
         ).order_by('-order')[:limit].select_related('product')
         
-        # Extract the products and serialize them
-        products = [sp.product for sp in special_products]
-        serializer = ProductSerializer(products, many=True)
-        return serializer.data
+        # Serialize with additional fields
+        result = []
+        for sp in special_products:
+            product_data = ProductSerializer(sp.product, context={'request': self.request}).data
+            result.append({
+                'order': sp.order,
+                'special_image': self.get_special_image_url(sp),
+                **product_data
+            })
+        return result
+    
+    def get_special_image_url(self, special_product):
+        if special_product.special_image and hasattr(special_product.special_image, 'url'):
+            if hasattr(self, 'request'):
+                return self.request.build_absolute_uri(special_product.special_image.url)
+            return special_product.special_image.url
+        return None
     
     def get_best_products(self, limit):
         # Get the best products with their related product data
@@ -158,11 +171,16 @@ class SpecialBestProductsView(APIView):
             is_active=True
         ).order_by('-order')[:limit].select_related('product')
         
-        # Extract the products and serialize them
-        products = [bp.product for bp in best_products]
-        serializer = ProductSerializer(products, many=True)
-        return serializer.data
-
+        # Serialize with additional fields
+        result = []
+        for bp in best_products:
+            product_data = ProductSerializer(bp.product, context={'request': self.request}).data
+            result.append({
+                'order': bp.order,
+                **product_data
+            })
+        return result
+    
 class UserCartView(generics.ListAPIView):
     serializer_class = UserCartSerializer
     permission_classes = [IsAuthenticated]
@@ -796,7 +814,7 @@ class SubCategoryListCreateView(generics.ListCreateAPIView):
     queryset = SubCategory.objects.all()
     serializer_class = SubCategorySerializer
     filter_backends = [DjangoFilterBackend]
-    filterset_fields = ['category']
+    filterset_fields = ['category','category__type']
     # permission_classes = [IsAdminUser]
 
 class SubCategoryRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):

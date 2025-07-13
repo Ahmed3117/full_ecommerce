@@ -45,7 +45,7 @@ class TeacherSerializer(serializers.ModelSerializer):
     subject_name = serializers.SerializerMethodField()
     class Meta:
         model = Teacher
-        fields = ['id', 'name', 'bio','image','subject','subject_name' , 'facebook', 'instagram', 'twitter', 'youtube', 'linkedin', 'telegram', 'website']
+        fields = ['id', 'name', 'bio','image','subject','subject_name' , 'facebook', 'instagram', 'twitter', 'youtube', 'linkedin', 'telegram', 'website','tiktok', 'whatsapp']
 
     def get_subject_name(self, obj):
         return obj.subject.name if obj.subject else None
