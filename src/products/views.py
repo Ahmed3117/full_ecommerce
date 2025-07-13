@@ -53,6 +53,17 @@ class TeacherListView(generics.ListAPIView):
     filterset_fields = ['subject']
     search_fields = ['name', 'subject__name']
 
+class TeacherDetailView(generics.RetrieveAPIView):
+    queryset = Teacher.objects.all()
+    serializer_class = TeacherSerializer
+    permission_classes = [AllowAny]
+    lookup_field = 'id'
+
+    def get(self, request, *args, **kwargs):
+        teacher = self.get_object()
+        serializer = self.get_serializer(teacher, context={'request': request})
+        return Response(serializer.data)
+
 class ProductListView(generics.ListAPIView):
     queryset = Product.objects.all()
     serializer_class = ProductSerializer
