@@ -29,7 +29,7 @@ class Command(BaseCommand):
         ]
         
         headers = {
-            'Authorization': f'Bearer {settings.FAWATERAK_API_KEY}',
+            'auth': f'Bearer {settings.FAWATERAK_API_KEY}',
             'Content-Type': 'application/json'
         }
         

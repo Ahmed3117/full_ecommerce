@@ -20,7 +20,7 @@ SECRET_KEY = os.getenv('SECRET_KEY')
 #^ SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DEBUG')
 
-ALLOWED_HOSTS = ['localhost','127.0.0.1','13.39.129.66']
+ALLOWED_HOSTS = ['localhost','127.0.0.1','13.39.129.66','192.168.1.6']
 
 
 #^ Application definition 
@@ -38,6 +38,7 @@ INSTALLED_APPS = [
     'corsheaders',
     'django_filters',
     'rest_framework',
+    'rest_framework.authtoken',  # Added for Token authentication
     'rest_framework_api_key',
     'rest_framework_simplejwt',
     'storages',
@@ -210,24 +211,35 @@ SIMPLE_JWT = {
 
 # ^ < ==========================CORS ORIGIN CONFIG========================== >
 
+# Update CORS settings
 CORS_ALLOW_ALL_ORIGINS = True
-
 CORS_ALLOW_CREDENTIALS = True
 
 CORS_ALLOW_HEADERS = [
-    'Auth',
+    'accept',
+    'accept-encoding',
+    'authorization',
     'Authorization',
-    'Content-Type',  
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+    'auth',  
 ]
 
 CORS_ALLOW_METHODS = [
+    'DELETE',
     'GET',
+    'OPTIONS',
+    'PATCH',
     'POST',
     'PUT',
-    'PATCH',
-    'DELETE',
 ]
 
+# Add these for preflight requests
+CORS_PREFLIGHT_MAX_AGE = 86400
 
 # ^ < ==========================WHATSAPP CONFIG========================== >
 
@@ -261,14 +273,25 @@ KHAZENLY_AUTHORIZATION_CODE = os.getenv('KHAZENLY_AUTHORIZATION_CODE', '')
 KHAZENLY_REFRESH_TOKEN = os.getenv('KHAZENLY_REFRESH_TOKEN', '') 
 
 
-# Fawaterak Payment Configuration
-FAWATERAK_API_KEY = os.getenv('FAWATERAK_API_KEY', '')
-FAWATERAK_PROVIDER_KEY = os.getenv('FAWATERAK_PROVIDER_KEY', '')
+# Fawaterak Configuration - with fallbacks and validation
+FAWATERAK_API_KEY = os.getenv('FAWATERAK_API_KEY')
+FAWATERAK_PROVIDER_KEY = os.getenv('FAWATERAK_PROVIDER_KEY', 'FAWATERAK.7136')
 FAWATERAK_BASE_URL = os.getenv('FAWATERAK_BASE_URL', 'https://app.fawaterk.com/api/v2')
-FAWATERAK_WEBHOOK_URL = os.getenv('FAWATERAK_WEBHOOK_URL', '')
-FAWATERAK_USERNAME = os.getenv('FAWATERAK_USERNAME', '')
-FAWATERAK_PASSWORD = os.getenv('FAWATERAK_PASSWORD', '')
-SITE_URL = os.getenv('SITE_URL', 'http://localhost:8000')
+FAWATERAK_WEBHOOK_URL = os.getenv('FAWATERAK_WEBHOOK_URL', 'https://mohammed-ayman.com/checkout_json.php?_json')
+FAWATERAK_USERNAME = os.getenv('FAWATERAK_USERNAME', 'mohamedaymab26@gmail.com')
+FAWATERAK_PASSWORD = os.getenv('FAWATERAK_PASSWORD', '1234')
+
+# Site URL
+SITE_URL = os.getenv('SITE_URL', 'http://127.0.0.1:8000')
+
+# Validate critical settings
+if not FAWATERAK_API_KEY:
+    import warnings
+    warnings.warn("FAWATERAK_API_KEY is not set in environment variables!")
+
+print(f"🔧 Fawaterak API Key loaded: {FAWATERAK_API_KEY[:20] if FAWATERAK_API_KEY else 'NOT SET'}...")
+print(f"🔧 Fawaterak Base URL: {FAWATERAK_BASE_URL}")
+print(f"🔧 Site URL: {SITE_URL}")
 # Logging configuration
 LOGGING = {
     'version': 1,

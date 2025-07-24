@@ -59,7 +59,7 @@ class Command(BaseCommand):
         }
         
         headers = {
-            'Authorization': f'Bearer {token}',
+            'auth': f'Bearer {token}',
             'Content-Type': 'application/json'
         }
         

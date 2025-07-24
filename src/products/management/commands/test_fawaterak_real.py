@@ -68,8 +68,8 @@ class Command(BaseCommand):
                     self.stdout.write('   SUCCESS: 4005 5500 0000 0001, 12/26, CVV: 100')
                     self.stdout.write('   FAIL: 5543474002249996, 05/21, CVV: 123')
                     self.stdout.write('3. Test API endpoints:')
-                    self.stdout.write(f'   POST http://localhost:8000/products/api/payment/create/{pill_id}/')
-                    self.stdout.write(f'   GET http://localhost:8000/products/api/payment/status/{pill_id}/')
+                    self.stdout.write(f'   POST http://127.0.0.1:8000/api/payment/create/{pill_id}/')
+                    self.stdout.write(f'   GET http://127.0.0.1:8000/api/payment/status/{pill_id}/')
                     
                 else:
                     self.stdout.write(self.style.ERROR(f'✗ Failed: {result["error"]}'))

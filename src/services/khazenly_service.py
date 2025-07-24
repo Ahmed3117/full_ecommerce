@@ -234,7 +234,7 @@ class KhazenlyAPIService:
             
             # Make the API request
             headers = {
-                'Authorization': f'Bearer {access_token}',
+                'auth': f'Bearer {access_token}',
                 'Content-Type': 'application/json'
             }
             

@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Fawaterak Test Cards Reference</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+        .card { background: white; padding: 20px; margin: 10px 0; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .success { border-left: 5px solid #28a745; }
+        .failure { border-left: 5px solid #dc3545; }
+        .code { background: #f8f9fa; padding: 2px 6px; border-radius: 3px; font-family: monospace; }
+    </style>
+</head>
+<body>
+    <h1>Fawaterak Test Cards Reference</h1>
+    
+    <div class="card success">
+        <h3>✅ Successful Payment Test Cards</h3>
+        <p><strong>Card Number:</strong> <span class="code">5123450000000008</span></p>
+        <p><strong>Expiry Date:</strong> <span class="code">12/25</span> (or any future date)</p>
+        <p><strong>CVV:</strong> <span class="code">100</span></p>
+        <p><strong>Cardholder Name:</strong> <span class="code">Test User</span></p>
+        <p><em>This card will process successfully and redirect to success URL</em></p>
+    </div>
+    
+    <div class="card success">
+        <h3>✅ Alternative Success Card</h3>
+        <p><strong>Card Number:</strong> <span class="code">4242424242424242</span></p>
+        <p><strong>Expiry Date:</strong> <span class="code">12/25</span></p>
+        <p><strong>CVV:</strong> <span class="code">123</span></p>
+        <p><strong>Cardholder Name:</strong> <span class="code">Test User</span></p>
+    </div>
+    
+    <div class="card failure">
+        <h3>❌ Failed Payment Test Cards</h3>
+        <p><strong>Card Number:</strong> <span class="code">4000000000000002</span></p>
+        <p><strong>Expiry Date:</strong> <span class="code">12/25</span></p>
+        <p><strong>CVV:</strong> <span class="code">123</span></p>
+        <p><em>This card will fail and redirect to failure URL</em></p>
+    </div>
+    
+    <h2>Testing Instructions:</h2>
+    <ol>
+        <li>Open your payment demo page: <a href="/testfawry/fawaterak_payment_demo.html">Demo Page</a></li>
+        <li>Load pill data</li>
+        <li>Create payment invoice</li>
+        <li>Click "Open Payment Page"</li>
+        <li>Use one of the SUCCESS cards above</li>
+        <li>Complete payment</li>
+        <li>You should be redirected to success URL</li>
+    </ol>
+    
+    <div class="card">
+        <h3>📝 Notes:</h3>
+        <ul>
+            <li>Always use future expiry dates (12/25, 01/26, etc.)</li>
+            <li>CVV can be any 3-digit number for test cards</li>
+            <li>Name can be anything</li>
+            <li>Success cards will redirect to: <span class="code">/api/payment/success/</span></li>
+            <li>Failed cards will redirect to: <span class="code">/api/payment/failed/</span></li>
+        </ul>
+    </div>
+</body>
+</html>

@@ -46,7 +46,7 @@ class Command(BaseCommand):
         self.stdout.write(f'\n=== Testing New Token ===')
         
         headers = {
-            'Authorization': f'Bearer {token}',
+            'auth': f'Bearer {token}',
             'Content-Type': 'application/json'
         }
         

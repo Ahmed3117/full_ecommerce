@@ -493,6 +493,7 @@ class Pill(models.Model):
     # Fawaterak fields
     fawaterak_invoice_key = models.CharField(max_length=100, null=True, blank=True)
     fawaterak_data = models.JSONField(null=True, blank=True)
+    invoice_id = models.CharField(max_length=100, null=True, blank=True, help_text="Fawaterak invoice ID")  
     
     def save(self, *args, **kwargs):
         if not self.pill_number:

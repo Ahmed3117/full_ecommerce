@@ -26,7 +26,7 @@ def test_khazenly_simple():
     
     # Test very simple order
     headers = {
-        'Authorization': f'Bearer {access_token}',
+        'auth': f'Bearer {access_token}',
         'Content-Type': 'application/json'
     }
     
