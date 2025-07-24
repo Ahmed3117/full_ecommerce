@@ -8,6 +8,10 @@ from products.utils import send_whatsapp_message
 from accounts.models import YEAR_CHOICES, User
 from core import settings
 from django.utils import timezone
+from django.utils.html import format_html
+import logging
+
+logger = logging.getLogger(__name__)
 
 GOVERNMENT_CHOICES = [
     ('1', 'Cairo'),
@@ -468,6 +472,9 @@ class PillItem(models.Model):
             
         super().save(*args, **kwargs)
      
+
+
+
 class Pill(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='pills')
     items = models.ManyToManyField(PillItem, related_name='pills')
@@ -477,20 +484,31 @@ class Pill(models.Model):
     coupon = models.ForeignKey('CouponDiscount', on_delete=models.SET_NULL, null=True, blank=True, related_name='pills')
     coupon_discount = models.FloatField(default=0.0)  # Stores discount amount
     gift_discount = models.ForeignKey('PillGift', on_delete=models.SET_NULL, null=True, blank=True, related_name='pills')
-    tracking_number = models.CharField(
-        max_length=50,
-        null=True,
-        blank=True
-    )
-    pill_number = models.CharField(
-        max_length=20,
-        editable=False,
-        unique=True,
-        default=generate_pill_number
-    )
+    tracking_number = models.CharField(max_length=50, null=True, blank=True)
+    pill_number = models.CharField(max_length=20, editable=False, unique=True, default=generate_pill_number)
+    
+    # Khazenly fields
+    is_shipped = models.BooleanField(default=False)
+    khazenly_data = models.JSONField(null=True, blank=True)
+    # Fawaterak fields
+    fawaterak_invoice_key = models.CharField(max_length=100, null=True, blank=True)
+    fawaterak_data = models.JSONField(null=True, blank=True)
+    
     def save(self, *args, **kwargs):
         if not self.pill_number:
             self.pill_number = generate_pill_number()
+
+        # Track if is_shipped is being changed
+        is_new_shipped = False
+        if self.pk:
+            try:
+                old_pill = Pill.objects.get(pk=self.pk)
+                if not old_pill.is_shipped and self.is_shipped:
+                    is_new_shipped = True
+            except Pill.DoesNotExist:
+                pass
+        elif self.is_shipped:
+            is_new_shipped = True
 
         is_new = not self.pk
         old_status = None if is_new else Pill.objects.get(pk=self.pk).status
@@ -499,7 +517,6 @@ class Pill(models.Model):
 
         if is_new:
             PillStatusLog.objects.create(pill=self, status=self.status)
-            # For new pills, update all items' status and price/sale info if needed
             for item in self.items.all():
                 item.status = self.status
                 if self.status in ['p', 'd']:
@@ -516,14 +533,11 @@ class Pill(models.Model):
                     status_log.changed_at = timezone.now()
                     status_log.save()
 
-                # Handle inventory restoration for canceled/refused orders that were previously delivered
                 if self.status in ['c', 'r'] and old_status == 'd':
                     self.restore_inventory()
 
-                # Update all items' status
                 self.items.update(status=self.status)
 
-                # For status changes to 'p' or 'd', update prices on each item
                 if self.status in ['p', 'd']:
                     for item in self.items.all():
                         self._update_pill_item_prices(item)
@@ -536,9 +550,116 @@ class Pill(models.Model):
                     self.process_delivery()
 
                 if self.paid and self.status != 'p':
-                    # self.status = 'p'
                     super().save(*args, **kwargs)
                     self.send_payment_notification()
+
+        # Create Khazenly order if is_shipped was just set to True
+        if is_new_shipped:
+            self._create_khazenly_order()
+
+    def _create_khazenly_order(self):
+        """Create Khazenly order when is_shipped is set to True"""
+        try:
+            from services.khazenly_service import khazenly_service  # Fixed import
+            
+            logger.info(f"Creating Khazenly order for pill {self.pill_number}")
+            
+            result = khazenly_service.create_order(self)
+            
+            if result['success']:
+                # Update the model without triggering save again
+                Pill.objects.filter(pk=self.pk).update(khazenly_data=result['data'])
+                logger.info(f"✓ Successfully created Khazenly order for pill {self.pill_number}")
+            else:
+                logger.error(f"✗ Failed to create Khazenly order for pill {self.pill_number}: {result['error']}")
+                
+        except Exception as e:
+            logger.error(f"✗ Error creating Khazenly order for pill {self.pill_number}: {str(e)}")
+    
+
+    @property
+    def khazenly_order_number(self):
+        """Get Khazenly order number from stored data"""
+        if self.khazenly_data:
+            return self.khazenly_data.get('orderNumber', self.pill_number)
+        return None
+
+    @property
+    def has_khazenly_order(self):
+        """Check if this pill has a Khazenly order"""
+        return bool(self.khazenly_data)
+
+    @property
+    def khazenly_status(self):
+        """Get Khazenly order status"""
+        if self.has_khazenly_order:
+            return "Created"
+        elif self.is_shipped:
+            return "Pending"
+        else:
+            return "Not Shipped"
+    def create_fawry_payment(self):
+        """Create Fawry payment invoice"""
+        from services.fawaterak_service import FawaterakService
+        service = FawaterakService()
+        result, error = service.create_fawry_invoice(self)
+        
+        if result:
+            self.fawaterak_invoice_key = result.get('invoice_key')
+            self.fawaterak_data = result
+            self.save()
+            return result.get('invoice_url')
+        
+        logger.error(f"Failed to create Fawry payment: {error}")
+        return None
+    def create_fawaterak_invoice(self):
+        """Create a Fawaterak Fawry invoice for this pill"""
+        from services.fawaterak_service import FawaterakService
+        
+        fawaterak = FawaterakService()
+        invoice_data, error = fawaterak.create_fawry_invoice(self)
+        
+        if invoice_data:
+            self.fawaterak_invoice_key = invoice_data.get('invoice_key')
+            self.fawaterak_data = invoice_data
+            self.save(update_fields=['fawaterak_invoice_key', 'fawaterak_data'])
+            return invoice_data.get('invoice_url')
+        return None
+
+    def check_fawaterak_payment(self):
+        """Check payment status with Fawaterak"""
+        if not self.fawaterak_invoice_key:
+            return None, "No Fawaterak invoice associated"
+            
+        from services.fawaterak_service import FawaterakService
+        
+        fawaterak = FawaterakService()
+        payment_data, error = fawaterak.check_payment_status(self.fawaterak_invoice_key)
+        
+        if payment_data:
+            # Update payment status if needed
+            if payment_data.get('payment_status') == 'paid' and not self.paid:
+                self.paid = True
+                self.status = 'p'  # Set to paid status
+                self.save(update_fields=['paid', 'status'])
+            return payment_data, None
+        return None, error
+
+    @property
+    def fawaterak_payment_url(self):
+        """Get Fawaterak payment URL if exists"""
+        if self.fawaterak_invoice_key and self.fawaterak_data:
+            return self.fawaterak_data.get('invoice_url')
+        return None
+
+    @property
+    def fawaterak_payment_status(self):
+        """Get Fawaterak payment status"""
+        if not self.fawaterak_invoice_key:
+            return "No invoice"
+        if self.paid:
+            return "Paid"
+        return "Pending"
 
     def _update_pill_item_prices(self, item):
         """Helper method to update prices and sale date on a pill item"""
@@ -566,12 +687,9 @@ class Pill(models.Model):
                         size=item.size,
                         color=item.color
                     )
-                    # Only restore quantity that was decremented
-                    # Assuming the full quantity was decremented when delivered
                     availability.quantity += item.quantity
                     availability.save()
                 except ProductAvailability.DoesNotExist:
-                    # Log error or handle appropriately if availability not found
                     continue
 
     def process_delivery(self):
@@ -579,17 +697,12 @@ class Pill(models.Model):
         with transaction.atomic():
             for item in self.items.all():
                 try:
-                    
                     color = item.color if item.color else None
                     availability = ProductAvailability.objects.select_for_update().get(
                         product=item.product,
                         size=item.size,
                         color=color
                     )
-                    print("---------------------------------------")
-                    print(availability)
-                    print(availability.quantity)
-                    print("---------------------------------------")
                     if availability.quantity < item.quantity:
                         raise ValidationError(
                             f"Not enough inventory for {item.product.name} "
@@ -598,7 +711,6 @@ class Pill(models.Model):
                         )
                     availability.quantity -= item.quantity
                     availability.save()
-                    # Update the item with sale information if not already set
                     self._update_pill_item_prices(item)
                     item.save()
                 except ProductAvailability.DoesNotExist:
@@ -611,13 +723,6 @@ class Pill(models.Model):
         """Send payment confirmation if phone exists"""
         if hasattr(self, 'pilladdress') and self.pilladdress.phone:
             prepare_whatsapp_message(self.pilladdress.phone, self)
-
-    class Meta:
-        verbose_name_plural = 'Bills'
-        ordering = ['-date_added']
-
-    def __str__(self):
-        return f"Pill ID: {self.id} - Status: {self.get_status_display()} - Date: {self.date_added}"
 
     def price_without_coupons_or_gifts(self):
         return sum(item.product.discounted_price() * item.quantity for item in self.items.all())
@@ -638,8 +743,8 @@ class Pill(models.Model):
         if hasattr(self, 'pilladdress'):
             try:
                 shipping = Shipping.objects.filter(government=self.pilladdress.government).first()
-                return shipping.shipping_price
-            except Shipping.DoesNotExist:
+                return shipping.shipping_price if shipping else 0.0
+            except:
                 return 0.0
         return 0.0
 
@@ -656,14 +761,12 @@ class Pill(models.Model):
             self.save()
             return None
 
-        # Calculate total price from items
         total = self.price_without_coupons_or_gifts()
         if total <= 0:
             self.gift_discount = None
             self.save()
             return None
 
-        # Find applicable gifts
         applicable_gifts = PillGift.objects.filter(
             is_active=True,
             min_order_value__lte=total
@@ -675,11 +778,9 @@ class Pill(models.Model):
             models.Q(end_date__isnull=True) | models.Q(end_date__gte=timezone.now())
         ).order_by('-discount_value', '-id')
 
-        # Check current gift availability
         if self.gift_discount and not self.gift_discount.is_available(total):
             self.gift_discount = None
 
-        # Apply best gift
         gift = applicable_gifts.first()
         if gift:
             self.gift_discount = gift
@@ -688,6 +789,13 @@ class Pill(models.Model):
         if not self.gift_discount:
             self.save()
         return None
+
+    class Meta:
+        verbose_name_plural = 'Bills'
+        ordering = ['-date_added']
+
+    def __str__(self):
+        return f"Pill ID: {self.id} - Status: {self.get_status_display()} - Date: {self.date_added}"
 
 class PillAddress(models.Model):
     pill = models.OneToOneField(Pill, on_delete=models.CASCADE, related_name='pilladdress')

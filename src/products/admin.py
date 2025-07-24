@@ -10,6 +10,9 @@ from .models import (
     SpinWheelResult, SpinWheelSettings, PillGift
 )
 
+
+import json
+
 class SubCategoryInline(admin.TabularInline):
     model = SubCategory
     extra = 1
@@ -141,19 +144,19 @@ class PillStatusLogInline(admin.TabularInline):
     
 @admin.register(Pill)
 class PillAdmin(admin.ModelAdmin):
-    list_display = ('pill_number', 'user', 'status', 'final_price_display', 'paid', 'date_added')
-    list_filter = ('status', 'paid', 'date_added')
-    search_fields = ('pill_number', 'user__username', 'pilladdress__phone', 'pilladdress__name')
-    autocomplete_fields = ('user', 'coupon', 'gift_discount')
-    readonly_fields = ('pill_number', 'date_added', 'final_price_display')
-    inlines = [PillAddressInline, PillStatusLogInline]
+    list_display = ['pill_number', 'user', 'status', 'is_shipped', 'khazenly_status']
+    list_filter = ['status', 'paid']  
+    search_fields = ['pill_number', 'user__username']
+    readonly_fields = ['pill_number']
     
-    def get_queryset(self, request):
-        return super().get_queryset(request).prefetch_related('items__product', 'pilladdress').select_related('user', 'coupon', 'gift_discount')
-
-    @admin.display(description='Final Price')
-    def final_price_display(self, obj):
-        return obj.final_price()
+    def khazenly_status(self, obj):
+        if obj.has_khazenly_order:
+            return format_html('<span style="color: green;">✓ Created</span>')
+        elif obj.is_shipped:
+            return format_html('<span style="color: orange;">⚠ Pending</span>')
+        else:
+            return format_html('<span style="color: gray;">-</span>')
+    khazenly_status.short_description = 'Khazenly'
 
 @admin.register(Discount)
 class DiscountAdmin(admin.ModelAdmin):

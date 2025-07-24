@@ -1,0 +1,278 @@
+import requests
+import json
+import logging
+from django.conf import settings
+from django.core.cache import cache
+
+logger = logging.getLogger(__name__)
+
+class FawaterakPaymentService:
+    def __init__(self):
+        self.api_key = settings.FAWATERAK_API_KEY
+        self.provider_key = settings.FAWATERAK_PROVIDER_KEY
+        self.base_url = settings.FAWATERAK_BASE_URL  # Now points to production
+        self.webhook_url = settings.FAWATERAK_WEBHOOK_URL
+        
+        # Use production endpoint
+        self.create_invoice_url = f"{self.base_url}/createInvoiceLink"
+        self.invoice_status_url = f"{self.base_url}/getInvoiceData"
+        
+    def create_payment_invoice(self, pill):
+        """
+        Create a payment invoice for a pill using Fawaterak Production API
+        """
+        try:
+            logger.info(f"Creating Fawaterak invoice for pill {pill.pill_number}")
+            
+            # Validate pill
+            if not hasattr(pill, 'pilladdress'):
+                return {'success': False, 'error': 'No address information'}
+            
+            if not pill.items.exists():
+                return {'success': False, 'error': 'No items in pill'}
+            
+            address = pill.pilladdress
+            
+            # Prepare cart items
+            cart_items = []
+            cart_total = 0
+            
+            # Add product items
+            for item in pill.items.all():
+                item_price = float(item.product.discounted_price())
+                cart_total += item_price * item.quantity
+                
+                item_description = item.product.name
+                if item.size:
+                    item_description += f" - Size: {item.size}"
+                if item.color:
+                    item_description += f" - Color: {item.color.name}"
+                
+                cart_items.append({
+                    "name": item_description[:100],
+                    "price": str(item_price),
+                    "quantity": str(item.quantity)
+                })
+            
+            # Add shipping
+            shipping_price = float(pill.shipping_price())
+            if shipping_price > 0:
+                cart_items.append({
+                    "name": "Shipping Fee",
+                    "price": str(shipping_price),
+                    "quantity": "1"
+                })
+                cart_total += shipping_price
+            
+            # Handle discounts
+            discount_amount = float(pill.coupon_discount + pill.calculate_gift_discount())
+            if discount_amount > 0:
+                cart_items.append({
+                    "name": "Discount (Coupon + Gifts)",
+                    "price": str(-discount_amount),
+                    "quantity": "1"
+                })
+                cart_total -= discount_amount
+            
+            # Prepare customer data
+            customer_names = address.name.split() if address.name else ['Customer', '']
+            customer_data = {
+                "first_name": customer_names[0][:50],
+                "last_name": " ".join(customer_names[1:])[:50] if len(customer_names) > 1 else "User",
+                "email": address.email or f"customer+{pill.id}@bookifay.com",
+                "phone": address.phone.replace('+', '').replace('-', '').replace(' ', '') if address.phone else "",
+                "address": address.address[:200] if address.address else "",
+                "customer_unique_id": str(pill.user.id)
+            }
+            
+            # Prepare payload
+            payload = {
+                "cartTotal": str(round(cart_total, 2)),
+                "currency": "EGP",
+                "customer": customer_data,
+                "cartItems": cart_items,
+                "redirectionUrls": {
+                    "successUrl": f"{settings.SITE_URL}/products/api/payment/success/{pill.pill_number}/",
+                    "failUrl": f"{settings.SITE_URL}/products/api/payment/failed/{pill.pill_number}/",
+                    "pendingUrl": f"{settings.SITE_URL}/products/api/payment/pending/{pill.pill_number}/",
+                    "webhookUrl": self.webhook_url
+                },
+                "payLoad": {
+                    "pill_id": pill.id,
+                    "pill_number": pill.pill_number,
+                    "user_id": pill.user.id,
+                    "original_total": str(pill.final_price())
+                },
+                "sendEmail": True,
+                "sendSMS": False,
+                "frequency": "once"
+            }
+            
+            headers = {
+                'Authorization': f'Bearer {self.api_key}',
+                'Content-Type': 'application/json'
+            }
+            
+            logger.info(f"Making request to: {self.create_invoice_url}")
+            response = requests.post(
+                self.create_invoice_url,
+                json=payload,
+                headers=headers,
+                timeout=30
+            )
+            
+            logger.info(f"Fawaterak response: {response.status_code} - {response.text}")
+            
+            if response.status_code == 200:
+                response_data = response.json()
+                
+                if response_data.get('status') == 'success':
+                    invoice_data = response_data.get('data', {})
+                    payment_url = invoice_data.get('url')
+                    invoice_key = invoice_data.get('invoiceKey')
+                    invoice_id = invoice_data.get('invoiceId')
+                    
+                    if payment_url:
+                        # Cache invoice data
+                        cache.set(
+                            f'fawaterak_invoice_{pill.pill_number}',
+                            {
+                                'invoice_id': invoice_id,
+                                'invoice_key': invoice_key,
+                                'payment_url': payment_url,
+                                'total_amount': cart_total,
+                                'pill_id': pill.id,
+                                'created_at': str(pill.date_added)
+                            },
+                            timeout=24*60*60
+                        )
+                        
+                        logger.info(f"✓ Fawaterak invoice created successfully for pill {pill.pill_number}")
+                        
+                        return {
+                            'success': True,
+                            'data': {
+                                'payment_url': payment_url,
+                                'invoice_id': invoice_id,
+                                'invoice_key': invoice_key,
+                                'reference_id': pill.pill_number,
+                                'total_amount': cart_total
+                            }
+                        }
+                    else:
+                        return {'success': False, 'error': 'No payment URL in response'}
+                else:
+                    error_msg = response_data.get('message', 'Unknown error from Fawaterak')
+                    return {'success': False, 'error': error_msg}
+            else:
+                return {'success': False, 'error': f'HTTP {response.status_code}: {response.text}'}
+                
+        except Exception as e:
+            logger.error(f"Exception creating Fawaterak invoice: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return {'success': False, 'error': str(e)}
+    
+    def get_invoice_status(self, reference_id):
+        """Get invoice status by reference ID"""
+        try:
+            headers = {
+                'Authorization': f'Bearer {self.api_key}',
+                'Content-Type': 'application/json'
+            }
+            
+            # Get cached invoice data
+            cached_data = cache.get(f'fawaterak_invoice_{reference_id}')
+            if not cached_data:
+                return {'success': False, 'error': 'Invoice data not found in cache'}
+            
+            invoice_key = cached_data.get('invoice_key')
+            if not invoice_key:
+                return {'success': False, 'error': 'Invoice key not found'}
+            
+            payload = {"invoiceKey": invoice_key}
+            
+            response = requests.post(
+                self.invoice_status_url,
+                json=payload,
+                headers=headers,
+                timeout=30
+            )
+            
+            if response.status_code == 200:
+                response_data = response.json()
+                if response_data.get('status') == 'success':
+                    return {'success': True, 'data': response_data.get('data', {})}
+                else:
+                    return {'success': False, 'error': response_data.get('message', 'Unknown error')}
+            else:
+                return {'success': False, 'error': f'HTTP {response.status_code}: {response.text}'}
+                
+        except Exception as e:
+            logger.error(f"Exception getting invoice status: {e}")
+            return {'success': False, 'error': str(e)}
+    
+    def process_webhook_payment(self, webhook_data):
+        """Process payment webhook from Fawaterak"""
+        try:
+            logger.info(f"Processing Fawaterak webhook: {webhook_data}")
+            
+            # Extract payment information
+            payload_data = webhook_data.get('payLoad', {})
+            pill_number = payload_data.get('pill_number')
+            payment_status = webhook_data.get('status', '').lower()
+            invoice_id = webhook_data.get('invoiceId')
+            
+            if not pill_number:
+                return {'success': False, 'error': 'No pill reference in webhook'}
+            
+            # Find the pill
+            from products.models import Pill
+            
+            try:
+                pill = Pill.objects.get(pill_number=pill_number)
+            except Pill.DoesNotExist:
+                logger.error(f"Pill not found for reference ID: {pill_number}")
+                return {'success': False, 'error': f'Pill not found: {pill_number}'}
+            
+            # Update pill payment status
+            if payment_status in ['paid', 'success', 'completed', 'successful']:
+                pill.paid = True
+                pill.save()
+                
+                logger.info(f"✓ Payment confirmed for pill {pill.pill_number}")
+                
+                # Clear cached invoice data
+                cache.delete(f'fawaterak_invoice_{pill.pill_number}')
+                
+                return {
+                    'success': True,
+                    'data': {
+                        'pill_number': pill.pill_number,
+                        'payment_status': 'confirmed',
+                        'invoice_id': invoice_id
+                    }
+                }
+            
+            elif payment_status in ['failed', 'cancelled', 'expired', 'fail']:
+                logger.warning(f"Payment failed for pill {pill.pill_number}: {payment_status}")
+                
+                return {
+                    'success': True,
+                    'data': {
+                        'pill_number': pill.pill_number,
+                        'payment_status': 'failed',
+                        'reason': payment_status
+                    }
+                }
+            
+            else:
+                logger.warning(f"Unknown payment status for pill {pill.pill_number}: {payment_status}")
+                return {'success': False, 'error': f'Unknown payment status: {payment_status}'}
+                
+        except Exception as e:
+            logger.error(f"Exception processing webhook: {e}")
+            return {'success': False, 'error': str(e)}
+
+# Global instance
+fawaterak_service = FawaterakPaymentService()

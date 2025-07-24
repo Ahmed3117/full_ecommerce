@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 import os
 
 #^ Load environment variables from .env file
-load_dotenv()
+load_dotenv(override=True) 
 
 #^ Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -25,7 +25,7 @@ ALLOWED_HOSTS = ['localhost','127.0.0.1','13.39.129.66']
 
 #^ Application definition 
 
-INSTALLED_APPS = [
+INSTALLED_APPS = [ 
     'admin_interface',
     'colorfield',
     'django.contrib.admin',
@@ -251,5 +251,51 @@ AWS_S3_VERIFY = True
 DEFAULT_FILE_STORAGE = 'storages.backends.s3boto3.S3Boto3Storage'
 """
 
+# ^ < ==========================Khazenly CONFIG========================== >
+# Khazenly API Configuration - with debug prints
+KHAZENLY_BASE_URL = os.getenv('KHAZENLY_BASE_URL', 'https://khazenly4--test.sandbox.my.site.com')
+KHAZENLY_CLIENT_ID = os.getenv('KHAZENLY_CLIENT_ID', '')
+KHAZENLY_CLIENT_SECRET = os.getenv('KHAZENLY_CLIENT_SECRET', '')
+KHAZENLY_STORE_NAME = os.getenv('KHAZENLY_STORE_NAME', '')
+KHAZENLY_AUTHORIZATION_CODE = os.getenv('KHAZENLY_AUTHORIZATION_CODE', '')
+KHAZENLY_REFRESH_TOKEN = os.getenv('KHAZENLY_REFRESH_TOKEN', '') 
 
 
+# Fawaterak Payment Configuration
+FAWATERAK_API_KEY = os.getenv('FAWATERAK_API_KEY', '')
+FAWATERAK_PROVIDER_KEY = os.getenv('FAWATERAK_PROVIDER_KEY', '')
+FAWATERAK_BASE_URL = os.getenv('FAWATERAK_BASE_URL', 'https://app.fawaterk.com/api/v2')
+FAWATERAK_WEBHOOK_URL = os.getenv('FAWATERAK_WEBHOOK_URL', '')
+FAWATERAK_USERNAME = os.getenv('FAWATERAK_USERNAME', '')
+FAWATERAK_PASSWORD = os.getenv('FAWATERAK_PASSWORD', '')
+SITE_URL = os.getenv('SITE_URL', 'http://localhost:8000')
+# Logging configuration
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'level': 'DEBUG',
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+        'file': {
+            'level': 'DEBUG',
+            'class': 'logging.FileHandler',
+            'filename': 'khazenly_debug.log',
+            'formatter': 'verbose',
+        },
+    },
+    'loggers': {
+        '': {  # Root logger
+            'handlers': ['console', 'file'],
+            'level': 'DEBUG' if DEBUG else 'INFO',
+        },
+    },
+}

@@ -1,4 +1,7 @@
 from django.urls import path
+
+from products import payment_views
+from products.webhooks import fawaterak_webhook
 from . import views
 
 app_name = 'products'
@@ -104,4 +107,13 @@ urlpatterns = [
     path('dashboard/pill-gifts/', views.PillGiftListCreateView.as_view(), name='pill-gift-list-create'),
     path('dashboard/pill-gifts/<int:pk>/', views.PillGiftRetrieveUpdateDestroyView.as_view(), name='pill-gift-detail'),
 
+
+    # Fawaterak Payment API Endpoints (DRF-based)
+    path('api/payment/create/<int:pill_id>/', payment_views.create_payment_view, name='api_create_payment'),
+    path('api/payment/webhook/fawaterak/', payment_views.fawaterak_webhook, name='api_fawaterak_webhook'),
+    path('api/payment/success/<str:pill_number>/', payment_views.payment_success_view, name='api_payment_success'),
+    path('api/payment/failed/<str:pill_number>/', payment_views.payment_failed_view, name='api_payment_failed'),
+    path('api/payment/pending/<str:pill_number>/', payment_views.payment_pending_view, name='api_payment_pending'),
+    path('api/payment/status/<int:pill_id>/', payment_views.check_payment_status_view, name='api_check_payment_status'),
 ]
+

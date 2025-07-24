@@ -1,6 +1,9 @@
 from datetime import timedelta
 import random
+import logging
 from django.shortcuts import get_object_or_404
+
+logger = logging.getLogger(__name__)
 from django.utils import timezone
 from django.db.models import Sum, F, Count, Q, Case, When, IntegerField
 from django.db import transaction
@@ -204,35 +207,45 @@ class TeacherProductsView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
         
-        # Get limit parameter with default of 10
+        # Get parameters with defaults
         limit = int(request.query_params.get('limit', 10))
+        is_important = request.query_params.get('important', 'false').lower() == 'true'
         
         # Prepare response data
         data = {
             'teacher': TeacherSerializer(teacher, context={'request': request}).data,
-            'important_books': self.get_important_books(teacher, limit),
-            'important_products': self.get_important_products(teacher, limit),
+            'books': self.get_books(teacher, limit, is_important),
+            'products': self.get_products(teacher, limit, is_important),
         }
         
         return Response(data, status=status.HTTP_200_OK)
     
-    def get_important_books(self, teacher, limit):
+    def get_books(self, teacher, limit, is_important):
         queryset = Product.objects.filter(
             teacher=teacher,
-            is_important=True,
             type='book'
-        ).order_by('-date_added')[:limit]
+        )
+        
+        if is_important:
+            queryset = queryset.filter(is_important=True)
+            
+        queryset = queryset.order_by('-date_added')[:limit]
         serializer = ProductSerializer(queryset, many=True, context={'request': self.request})
         return serializer.data
     
-    def get_important_products(self, teacher, limit):
+    def get_products(self, teacher, limit, is_important):
         queryset = Product.objects.filter(
             teacher=teacher,
-            is_important=True,
             type='product'
-        ).order_by('-date_added')[:limit]
+        )
+        
+        if is_important:
+            queryset = queryset.filter(is_important=True)
+            
+        queryset = queryset.order_by('-date_added')[:limit]
         serializer = ProductSerializer(queryset, many=True, context={'request': self.request})
         return serializer.data
+
 
 class UserCartView(generics.ListAPIView):
     serializer_class = UserCartSerializer
@@ -1298,7 +1311,5 @@ class ApplyPayRequestView(APIView):
             pill.status = 'p'
             pill.save()
         return Response({"status": "Pay request applied successfully"}, status=status.HTTP_200_OK)
-
-
 
 
