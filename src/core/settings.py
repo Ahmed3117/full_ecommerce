@@ -20,7 +20,7 @@ SECRET_KEY = os.getenv('SECRET_KEY')
 #^ SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DEBUG')
 
-ALLOWED_HOSTS = ['localhost','127.0.0.1','13.39.129.66','192.168.1.6']
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', '13.39.129.66', '192.168.1.6', '*']
 
 
 #^ Application definition 
@@ -156,15 +156,15 @@ EMAIL_HOST_PASSWORD = 'meczfpooichwkudl'
 
 #^ < ==========================CACHES CONFIG========================== >
 
-# CACHES = {
-#     'default': {
-#         'BACKEND': 'django_redis.cache.RedisCache',
-#         'LOCATION': 'redis://127.0.0.1:6379/1',  
-#         'OPTIONS': {
-#             'CLIENT_CLASS': 'django_redis.client.DefaultClient',
-#         }
-#     }
-# }
+CACHES = {
+    'default': {
+        'BACKEND': 'django_redis.cache.RedisCache',
+        'LOCATION': 'redis://127.0.0.1:6379/1',  
+        'OPTIONS': {
+            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+        }
+    }
+}
 
 
 #^ < ==========================REST FRAMEWORK SETTINGS========================== >
@@ -274,7 +274,7 @@ KHAZENLY_REFRESH_TOKEN = os.getenv('KHAZENLY_REFRESH_TOKEN', '')
 
 
 # Fawaterak Configuration - with fallbacks and validation
-FAWATERAK_API_KEY = os.getenv('FAWATERAK_API_KEY')
+FAWATERAK_API_KEY = os.getenv('FAWATERAK_API_KEY', '1bdd1c4da30c752efc4e8bd523973e484d8f1c50714cff0b97')
 FAWATERAK_PROVIDER_KEY = os.getenv('FAWATERAK_PROVIDER_KEY', 'FAWATERAK.7136')
 FAWATERAK_BASE_URL = os.getenv('FAWATERAK_BASE_URL', 'https://app.fawaterk.com/api/v2')
 FAWATERAK_WEBHOOK_URL = os.getenv('FAWATERAK_WEBHOOK_URL', 'https://mohammed-ayman.com/checkout_json.php?_json')
@@ -282,7 +282,7 @@ FAWATERAK_USERNAME = os.getenv('FAWATERAK_USERNAME', 'mohamedaymab26@gmail.com')
 FAWATERAK_PASSWORD = os.getenv('FAWATERAK_PASSWORD', '1234')
 
 # Site URL
-SITE_URL = os.getenv('SITE_URL', 'http://127.0.0.1:8000')
+SITE_URL = os.getenv('SITE_URL', 'https://api2.bookefay.com')
 
 # Validate critical settings
 if not FAWATERAK_API_KEY:
