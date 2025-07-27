@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fawaterak Production Test - BOOKIFAY</title>
+    <style>
+        /* Keep all existing styles */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .content {
+            padding: 30px;
+        }
+
+        .btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 25px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 5px 10px 5px 0;
+            transition: all 0.3s;
+        }
+
+        .btn:hover {
+            background: #5a6fd8;
+            transform: translateY(-2px);
+        }
+
+        .btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn.success {
+            background: #28a745;
+        }
+
+        .btn.warning {
+            background: #ffc107;
+            color: #333;
+        }
+
+        .logs {
+            background: #2d3748;
+            color: #e2e8f0;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            max-height: 300px;
+            overflow-y: auto;
+            margin-top: 15px;
+        }
+
+        .log-entry {
+            margin-bottom: 5px;
+            padding: 5px;
+            border-radius: 3px;
+        }
+
+        .log-success { background: rgba(72, 187, 120, 0.2); }
+        .log-error { background: rgba(245, 101, 101, 0.2); }
+        .log-info { background: rgba(66, 153, 225, 0.2); }
+        .log-warning { background: rgba(237, 137, 54, 0.2); }
+
+        .config-box {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            padding: 15px;
+            margin: 15px 0;
+            font-family: monospace;
+            font-size: 12px;
+        }
+
+        .production-badge {
+            background: #dc3545;
+            color: white;
+            padding: 5px 10px;
+            border-radius: 15px;
+            font-size: 12px;
+            font-weight: bold;
+            margin-left: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Fawaterak Production Test <span class="production-badge">LIVE</span></h1>
+            <p>Testing integration with Fawaterak payment gateway in production environment</p>
+        </div>
+        <div class="content">
+            <!-- Configuration Display -->
+            <div class="config-box">
+                <h4>🔧 Production Configuration:</h4>
+                <div>Base URL: <strong>https://api2.bookefay.com</strong></div>
+                <div>Webhook URL: <strong>https://api2.bookefay.com/api/payment/webhook/fawaterak/</strong></div>
+                <div>Environment: <strong>PRODUCTION</strong></div>
+                <div>Test Pill: <strong>#30</strong></div>
+            </div>
+
+            <!-- JWT Token Input -->
+            <div>
+                <h3>🔑 Authentication Setup</h3>
+                <p>Generate a production JWT token and paste it here:</p>
+                <input type="text" id="jwt-token-input" placeholder="Paste your JWT token here..." style="width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ddd; border-radius: 5px;">
+                <button class="btn" onclick="setJWTToken()">Set JWT Token</button>
+                <div id="token-status" style="margin-top: 10px;"></div>
+            </div>
+
+            <!-- Test Actions -->
+            <div style="margin-top: 30px;">
+                <h3>🚀 Production Test Actions</h3>
+                <button class="btn" onclick="loadPillData()" id="load-pill-btn" disabled>Load Pill #30</button>
+                <button class="btn" onclick="createPaymentInvoice()" id="create-payment-btn" disabled>Create Payment Invoice</button>
+                <button class="btn warning" onclick="openPaymentUrl()" id="open-payment-btn" disabled>Open Payment Page</button>
+                <button class="btn success" onclick="checkPaymentStatus()" id="check-status-btn" disabled>Check Payment Status</button>
+            </div>
+
+            <!-- Test Card Information -->
+            <div style="margin-top: 20px;">
+                <h4>💳 Test Cards for Production:</h4>
+                <div style="background: #e8f5e8; padding: 10px; border-radius: 5px; margin: 10px 0;">
+                    <strong>✅ SUCCESS Card:</strong> 5123450000000008 | Exp: 12/25 | CVV: 100
+                </div>
+                <div style="background: #fff3cd; padding: 10px; border-radius: 5px; margin: 10px 0;">
+                    <strong>❌ FAIL Card:</strong> 4000000000000002 | Exp: 12/25 | CVV: 123
+                </div>
+            </div>
+
+            <!-- Logs Container -->
+            <div id="logs" class="logs"></div>
+        </div>
+    </div>
+
+    <script>
+        // PRODUCTION Configuration
+        const CONFIG = {
+            baseUrl: 'https://api2.bookefay.com',
+            jwtToken: null,
+            pillId: 30,
+            pillNumber: '92669214257708369311'
+        };
+
+        // Global state
+        let pillData = null;
+        let paymentData = null;
+
+        function getAuthHeaders() {
+            if (!CONFIG.jwtToken) {
+                throw new Error('JWT token not set. Please set your token first.');
+            }
+            return {
+                'Content-Type': 'application/json',
+                'auth': `Bearer ${CONFIG.jwtToken}`
+            };
+        }
+
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.className = `log-entry log-${type}`;
+            logEntry.innerHTML = `[${timestamp}] ${message}`;
+
+            const logsContainer = document.getElementById('logs');
+            logsContainer.appendChild(logEntry);
+            logsContainer.scrollTop = logsContainer.scrollHeight;
+        }
+
+        function setJWTToken() {
+            const token = document.getElementById('jwt-token-input').value.trim();
+            if (!token) {
+                document.getElementById('token-status').innerHTML = '<span style="color: red;">❌ Please enter a JWT token</span>';
+                return;
+            }
+
+            CONFIG.jwtToken = token;
+            document.getElementById('token-status').innerHTML = '<span style="color: green;">✅ JWT token set successfully</span>';
+            
+            // Enable test buttons
+            document.getElementById('load-pill-btn').disabled = false;
+            
+            log('JWT token configured for production testing', 'success');
+            log('Ready to test payment flow', 'info');
+        }
+
+        async function loadPillData() {
+            log('Loading pill data from production server...', 'info');
+
+            try {
+                const response = await fetch(`${CONFIG.baseUrl}/pills/${CONFIG.pillId}/`, {
+                    method: 'GET',
+                    headers: getAuthHeaders()
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                pillData = await response.json();
+                log(`✓ Pill data loaded successfully (Amount: ${pillData.final_price} EGP)`, 'success');
+
+                // Enable next step
+                document.getElementById('create-payment-btn').disabled = false;
+
+            } catch (error) {
+                log(`✗ Error loading pill data: ${error.message}`, 'error');
+            }
+        }
+
+        async function createPaymentInvoice() {
+            log('Creating payment invoice in production...', 'info');
+
+            try {
+                const response = await fetch(`${CONFIG.baseUrl}/api/payment/create/${CONFIG.pillId}/`, {
+                    method: 'POST',
+                    headers: getAuthHeaders()
+                });
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`HTTP ${response.status}: ${errorText}`);
+                }
+
+                const result = await response.json();
+
+                if (result.success) {
+                    paymentData = result.data;
+                    log(`✓ Production payment invoice created: ${paymentData.invoice_id}`, 'success');
+                    log(`Payment URL: ${paymentData.payment_url}`, 'info');
+
+                    // Enable next steps
+                    document.getElementById('open-payment-btn').disabled = false;
+                    document.getElementById('check-status-btn').disabled = false;
+
+                } else {
+                    throw new Error(result.error || 'Failed to create payment invoice');
+                }
+
+            } catch (error) {
+                log(`✗ Error creating payment invoice: ${error.message}`, 'error');
+            }
+        }
+
+        function openPaymentUrl() {
+            if (paymentData?.payment_url) {
+                window.open(paymentData.payment_url, '_blank');
+                log('Opened production payment URL', 'info');
+                log('Complete payment and return to check status', 'warning');
+            }
+        }
+
+        async function checkPaymentStatus() {
+            log('Checking payment status from production...', 'info');
+
+            try {
+                const response = await fetch(`${CONFIG.baseUrl}/api/payment/status/${CONFIG.pillId}/`, {
+                    method: 'GET',
+                    headers: getAuthHeaders()
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const result = await response.json();
+
+                if (result.success) {
+                    const status = result.data.paid ? 'PAID ✅' : 'PENDING ⏳';
+                    log(`Payment Status: ${status}`, result.data.paid ? 'success' : 'warning');
+                    
+                    if (result.data.paid) {
+                        log('🎉 Payment confirmed successfully in production!', 'success');
+                    }
+                } else {
+                    log(`Status check result: ${result.error}`, 'warning');
+                }
+
+            } catch (error) {
+                log(`✗ Error checking payment status: ${error.message}`, 'error');
+            }
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            log('🚀 Fawaterak Production Test initialized', 'info');
+            log('📋 Before testing, make sure:', 'warning');
+            log('  1. Code is deployed to production server', 'warning');
+            log('  2. Fawaterak webhook URL is updated to production', 'warning');
+            log('  3. Generate a fresh JWT token for testing', 'warning');
+            log('🔑 Generate token with: python manage.py get_jwt_token --production', 'info');
+        });
+    </script>
+</body>
+</html>

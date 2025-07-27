@@ -8,6 +8,7 @@ from rest_framework.authentication import get_authorization_header
 from django.contrib.auth.models import User
 from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
+from django.shortcuts import redirect
 import json
 import logging
 
@@ -234,7 +235,7 @@ class PaymentSuccessView(APIView):
     
     def get(self, request, pill_number):
         """
-        Handle successful payment return - JSON response
+        Handle successful payment return - Process and redirect to frontend
         """
         try:
             pill = get_object_or_404(Pill, pill_number=pill_number)
@@ -251,129 +252,71 @@ class PaymentSuccessView(APIView):
                     pill.status = 'p'
                     pill.save()
                     
-                    return Response({
-                        'success': True,
-                        'message': 'Payment confirmed successfully',
-                        'data': {
-                            'pill_number': pill.pill_number,
-                            'payment_status': 'confirmed',
-                            'total_amount': float(pill.final_price()),
-                            'currency': 'EGP',
-                            'paid_at': invoice_data.get('paid_at'),
-                            'invoice_data': invoice_data
-                        },
-                        'status': 'payment_confirmed'
-                    }, status=status.HTTP_200_OK)
+                    logger.info(f"✓ Payment SUCCESS confirmed for pill {pill_number}")
+                    
+                    # Redirect to frontend success page
+                    frontend_url = f"https://bookefay.com/profile/orders?pill_number={pill_number}&payment_status=success&amount={pill.final_price()}"
+                    return redirect(frontend_url)
                 else:
-                    return Response({
-                        'success': False,
-                        'message': 'Payment is still being processed',
-                        'data': {
-                            'pill_number': pill.pill_number,
-                            'payment_status': payment_status,
-                            'total_amount': float(pill.final_price()),
-                            'currency': 'EGP'
-                        },
-                        'status': 'payment_pending'
-                    }, status=status.HTTP_200_OK)
+                    logger.warning(f"Payment status still pending for pill {pill_number}: {payment_status}")
+                    # Redirect to frontend pending page  
+                    frontend_url = f"https://bookefay.com?pill_number={pill_number}&payment_status=pending&amount={pill.final_price()}"
+                    return redirect(frontend_url)
             else:
-                return Response({
-                    'success': False,
-                    'error': 'Could not verify payment status',
-                    'data': {
-                        'pill_number': pill.pill_number,
-                        'total_amount': float(pill.final_price())
-                    },
-                    'status': 'verification_failed'
-                }, status=status.HTTP_400_BAD_REQUEST)
+                logger.error(f"Could not verify payment status for pill {pill_number}")
+                # Redirect to frontend with error
+                frontend_url = f"https://bookefay.com/profile?pill_number={pill_number}&payment_status=error&amount={pill.final_price()}"
+                return redirect(frontend_url)
                 
         except Exception as e:
             logger.error(f"Error in payment success: {e}")
-            return Response({
-                'success': False,
-                'error': 'An error occurred while verifying payment',
-                'status': 'server_error'
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            # Redirect to frontend with error
+            frontend_url = f"https://bookefay.com/profile?pill_number={pill_number}&payment_status=error"
+            return redirect(frontend_url)
 
 class PaymentFailedView(APIView):
     permission_classes = []  # No authentication required for callbacks
     
     def get(self, request, pill_number):
         """
-        Handle failed payment return - JSON response
+        Handle failed payment return - Process and redirect to frontend
         """
         try:
             pill = get_object_or_404(Pill, pill_number=pill_number)
             
-            # Get more details about the failure
-            result = fawaterak_service.get_invoice_status(pill_number)
-            failure_reason = "Unknown"
+            logger.info(f"✗ Payment FAILED for pill {pill_number}")
             
-            if result['success']:
-                invoice_data = result['data']
-                failure_reason = invoice_data.get('status', 'failed')
-            
-            return Response({
-                'success': False,
-                'message': 'Payment failed',
-                'data': {
-                    'pill_number': pill.pill_number,
-                    'payment_status': 'failed',
-                    'failure_reason': failure_reason,
-                    'total_amount': float(pill.final_price()),
-                    'currency': 'EGP',
-                    'retry_available': True
-                },
-                'status': 'payment_failed'
-            }, status=status.HTTP_200_OK)
+            # Redirect to frontend failure page
+            frontend_url = f"https://bookefay.com/profile?pill_number={pill_number}&payment_status=failed&amount={pill.final_price()}"
+            return redirect(frontend_url)
             
         except Exception as e:
             logger.error(f"Error in payment failed: {e}")
-            return Response({
-                'success': False,
-                'error': 'An error occurred while processing failed payment',
-                'status': 'server_error'
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            # Redirect to frontend with error
+            frontend_url = f"https://bookefay.com/profile?pill_number={pill_number}&payment_status=error"
+            return redirect(frontend_url)
 
 class PaymentPendingView(APIView):
     permission_classes = []  # No authentication required for callbacks
     
     def get(self, request, pill_number):
         """
-        Handle pending payment return - JSON response
+        Handle pending payment return - Process and redirect to frontend
         """
         try:
             pill = get_object_or_404(Pill, pill_number=pill_number)
             
-            # Check current status
-            result = fawaterak_service.get_invoice_status(pill_number)
-            current_status = "pending"
+            logger.info(f"⏳ Payment PENDING for pill {pill_number}")
             
-            if result['success']:
-                invoice_data = result['data']
-                current_status = invoice_data.get('status', 'pending')
-            
-            return Response({
-                'success': True,
-                'message': 'Payment is being processed',
-                'data': {
-                    'pill_number': pill.pill_number,
-                    'payment_status': current_status,
-                    'total_amount': float(pill.final_price()),
-                    'currency': 'EGP',
-                    'estimated_processing_time': '5-10 minutes',
-                    'check_status_url': f'/api/payment/status/{pill.id}/'
-                },
-                'status': 'payment_pending'
-            }, status=status.HTTP_200_OK)
+            # Redirect to frontend pending page
+            frontend_url = f"https://bookefay.com?pill_number={pill_number}&payment_status=pending&amount={pill.final_price()}"
+            return redirect(frontend_url)
             
         except Exception as e:
             logger.error(f"Error in payment pending: {e}")
-            return Response({
-                'success': False,
-                'error': 'An error occurred while checking pending payment',
-                'status': 'server_error'
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            # Redirect to frontend with error
+            frontend_url = f"https://bookefay.com?pill_number={pill_number}&payment_status=error"
+            return redirect(frontend_url)
 
 
 # Instantiate the views
