@@ -208,19 +208,22 @@ def fawaterak_webhook(request):
         
         logger.info(f"Received Fawaterak webhook: {webhook_data}")
         
-        result = fawaterak_service.process_webhook_payment(webhook_data)
+        # result = fawaterak_service.process_webhook_payment(webhook_data)
         
-        if result['success']:
+        if webhook_data['invoice_status'] == 'paid':
+            pill = Pill.objects.get(pill_number = webhook_data['pay_load']['pill_number'] )
+            pill.paid = True
+            pill.status = 'p'
             return Response({
                 'success': True,
                 'message': 'Webhook processed successfully',
-                'data': result['data']
+                'data': webhook_data['data']
             }, status=status.HTTP_200_OK)
         else:
-            logger.error(f"Webhook processing failed: {result['error']}")
+            logger.error(f"Webhook processing failed: {webhook_data['error']}")
             return Response({
                 'success': False,
-                'error': result['error']
+                'error': webhook_data['error']
             }, status=status.HTTP_400_BAD_REQUEST)
             
     except Exception as e:

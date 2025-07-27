@@ -265,7 +265,7 @@ class FawaterakPaymentService:
             # Extract payment information
             payload_data = webhook_data.get('payLoad', {})
             pill_number = payload_data.get('pill_number')
-            payment_status = webhook_data.get('status', '').lower()
+            payment_status = webhook_data.get('invoice_status', '').lower()
             payment_method = webhook_data.get('payment_method', '').lower()
             invoice_id = webhook_data.get('invoiceId')
             
