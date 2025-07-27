@@ -198,6 +198,9 @@ class CheckPaymentStatusView(APIView):
 @api_view(['POST'])
 @permission_classes([])  # No authentication required for webhooks
 def fawaterak_webhook(request):
+    print("-------------------------------------------")
+    print('i am in webhook view')
+    print("-------------------------------------------")
     """Handle Fawaterak payment webhooks"""
     try:
         webhook_data = request.data if hasattr(request, 'data') else json.loads(request.body.decode('utf-8'))

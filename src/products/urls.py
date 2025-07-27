@@ -116,9 +116,5 @@ urlpatterns = [
     path('api/payment/pending/<str:pill_number>/', payment_views.payment_pending_view, name='api_payment_pending'),
     path('api/payment/status/<int:pill_id>/', payment_views.check_payment_status_view, name='api_check_payment_status'),
     
-    # FALLBACK: Handle Fawaterak's incorrect redirect URLs with /products prefix
-    path('products/api/payment/success/<str:pill_number>/', payment_views.payment_success_view, name='fallback_payment_success'),
-    path('products/api/payment/failed/<str:pill_number>/', payment_views.payment_failed_view, name='fallback_payment_failed'),
-    path('products/api/payment/pending/<str:pill_number>/', payment_views.payment_pending_view, name='fallback_payment_pending'),
 ]
 

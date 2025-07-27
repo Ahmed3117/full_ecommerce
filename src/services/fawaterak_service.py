@@ -10,7 +10,7 @@ class FawaterakPaymentService:
     def __init__(self):
         self.api_key = settings.FAWATERAK_API_KEY
         self.provider_key = settings.FAWATERAK_PROVIDER_KEY
-        self.base_url = settings.FAWATERAK_BASE_URL  # https://app.fawaterk.com/api/v2
+        self.base_url = settings.FAWATERAK_BASE_URL 
         self.webhook_url = settings.FAWATERAK_WEBHOOK_URL
         
         # Correct API endpoints
@@ -91,17 +91,21 @@ class FawaterakPaymentService:
                 "customer_unique_id": str(pill.user.id)
             }
             
-            # FIXED: Use Authorization header (confirmed working from tests)
+            webhook_url= settings.FAWATERAK_WEBHOOK_URL
+            success_url = f"{settings.SUCCESS_URL}?pill_number={pill.pill_number}&payment_status=success&amount={cart_total}"
+            pending_url = f"{settings.PENDING_URL}?pill_number={pill.pill_number}&payment_status=pending&amount={cart_total}"
+            fail_url = f"{settings.FAIL_URL}?pill_number={pill.pill_number}&payment_status=failed&amount={cart_total}"
+            
             payload = {
                 "cartTotal": str(round(cart_total, 2)),
                 "currency": "EGP",
                 "customer": customer_data,
                 "cartItems": cart_items,
                 "redirectionUrls": {
-                    "successUrl": f"{settings.SITE_URL}/api/payment/success/{pill.pill_number}/",
-                    "failUrl": f"{settings.SITE_URL}/api/payment/failed/{pill.pill_number}/",
-                    "pendingUrl": f"{settings.SITE_URL}/api/payment/pending/{pill.pill_number}/",
-                    "webhookUrl": self.webhook_url
+                    "successUrl": success_url,
+                    "pendingUrl": pending_url,
+                    "failUrl": fail_url,
+                    "webhookUrl": webhook_url
                 },
                 "payLoad": {
                     "pill_id": pill.id,
@@ -120,7 +124,10 @@ class FawaterakPaymentService:
             }
             
             logger.info(f"Making request to: {self.create_invoice_url}")
-            logger.info(f"Redirect URLs: {payload['redirectionUrls']}")
+            logger.info(f"Redirect URLs:")
+            logger.info(f"  Success: {success_url}")
+            logger.info(f"  Pending: {pending_url}")
+            logger.info(f"  Fail: {fail_url}")
             
             response = requests.post(
                 self.create_invoice_url,
@@ -181,6 +188,7 @@ class FawaterakPaymentService:
             import traceback
             logger.error(f"Traceback: {traceback.format_exc()}")
             return {'success': False, 'error': str(e)}
+
     
     def get_invoice_status(self, reference_id):
         """
@@ -245,6 +253,9 @@ class FawaterakPaymentService:
             return {'success': False, 'error': str(e)}
     
     def process_webhook_payment(self, webhook_data):
+        print("-------------------------------------------")
+        print('i am in webhook service')
+        print("-------------------------------------------")
         """
         Process payment webhook from Fawaterak
         """
@@ -255,6 +266,7 @@ class FawaterakPaymentService:
             payload_data = webhook_data.get('payLoad', {})
             pill_number = payload_data.get('pill_number')
             payment_status = webhook_data.get('status', '').lower()
+            payment_method = webhook_data.get('payment_method', '').lower()
             invoice_id = webhook_data.get('invoiceId')
             
             if not pill_number:
@@ -269,12 +281,27 @@ class FawaterakPaymentService:
                 logger.error(f"Pill not found for reference ID: {pill_number}")
                 return {'success': False, 'error': f'Pill not found: {pill_number}'}
             
+            # FIXED: Handle Fawry-specific status logic
+            # Fawry payments may show as "pending" even when money is taken
+            # Check for Fawry-specific indicators of successful payment
+            fawry_success_indicators = [
+                'paid', 'success', 'completed', 'successful', 
+                'fawry_paid', 'wallet_deducted', 'transaction_completed'
+            ]
+            
+            fawry_pending_but_paid = (
+                payment_method == 'fawry' and 
+                payment_status == 'pending' and 
+                webhook_data.get('transaction_id') and  # Has transaction ID
+                webhook_data.get('amount_paid', 0) > 0   # Amount was deducted
+            )
+            
             # Update pill payment status
-            if payment_status in ['paid', 'success', 'completed', 'successful']:
+            if payment_status in fawry_success_indicators or fawry_pending_but_paid:
                 pill.paid = True
                 pill.save()
                 
-                logger.info(f"✓ Payment confirmed for pill {pill.pill_number}")
+                logger.info(f"✓ Payment confirmed for pill {pill.pill_number} (Status: {payment_status}, Method: {payment_method})")
                 
                 # Clear cached invoice data
                 cache.delete(f'fawaterak_invoice_{pill.pill_number}')
@@ -284,6 +311,7 @@ class FawaterakPaymentService:
                     'data': {
                         'pill_number': pill.pill_number,
                         'payment_status': 'confirmed',
+                        'payment_method': payment_method,
                         'invoice_id': invoice_id
                     }
                 }
@@ -301,7 +329,8 @@ class FawaterakPaymentService:
                 }
             
             else:
-                logger.warning(f"Unknown payment status for pill {pill.pill_number}: {payment_status}")
+                logger.warning(f"Unknown payment status for pill {pill.pill_number}: {payment_status} (Method: {payment_method})")
+                logger.info(f"Full webhook data: {webhook_data}")
                 return {'success': False, 'error': f'Unknown payment status: {payment_status}'}
                 
         except Exception as e:

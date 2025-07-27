@@ -156,15 +156,15 @@ EMAIL_HOST_PASSWORD = 'meczfpooichwkudl'
 
 #^ < ==========================CACHES CONFIG========================== >
 
-CACHES = {
-    'default': {
-        'BACKEND': 'django_redis.cache.RedisCache',
-        'LOCATION': 'redis://127.0.0.1:6379/1',  
-        'OPTIONS': {
-            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
-        }
-    }
-}
+# CACHES = {
+#     'default': {
+#         'BACKEND': 'django_redis.cache.RedisCache',
+#         'LOCATION': 'redis://127.0.0.1:6379/1',  
+#         'OPTIONS': {
+#             'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+#         }
+#     }
+# }
 
 
 #^ < ==========================REST FRAMEWORK SETTINGS========================== >
@@ -274,15 +274,17 @@ KHAZENLY_REFRESH_TOKEN = os.getenv('KHAZENLY_REFRESH_TOKEN', '')
 
 
 # Fawaterak Configuration - with fallbacks and validation
+# Site URL
+SITE_URL = os.getenv('SITE_URL', 'https://api2.bookefay.com')
+SUCCESS_URL = os.getenv('SUCCESS_URL', 'https://bookefay.com/profile/orders')
+FAIL_URL = os.getenv('FAIL_URL', 'https://bookefay.com/profile')
+PENDING_URL = os.getenv('PENDING_URL', 'https://bookefay.com')
 FAWATERAK_API_KEY = os.getenv('FAWATERAK_API_KEY', '1bdd1c4da30c752efc4e8bd523973e484d8f1c50714cff0b97')
 FAWATERAK_PROVIDER_KEY = os.getenv('FAWATERAK_PROVIDER_KEY', 'FAWATERAK.7136')
 FAWATERAK_BASE_URL = os.getenv('FAWATERAK_BASE_URL', 'https://app.fawaterk.com/api/v2')
-FAWATERAK_WEBHOOK_URL = os.getenv('FAWATERAK_WEBHOOK_URL', 'https://mohammed-ayman.com/checkout_json.php?_json')
+FAWATERAK_WEBHOOK_URL = os.getenv('FAWATERAK_WEBHOOK_URL', f'{SITE_URL}/api/payment/webhook/fawaterak/')
 FAWATERAK_USERNAME = os.getenv('FAWATERAK_USERNAME', 'mohamedaymab26@gmail.com')
 FAWATERAK_PASSWORD = os.getenv('FAWATERAK_PASSWORD', '1234')
-
-# Site URL
-SITE_URL = os.getenv('SITE_URL', 'https://api2.bookefay.com')
 
 # Validate critical settings
 if not FAWATERAK_API_KEY:
@@ -292,6 +294,10 @@ if not FAWATERAK_API_KEY:
 print(f"🔧 Fawaterak API Key loaded: {FAWATERAK_API_KEY[:20] if FAWATERAK_API_KEY else 'NOT SET'}...")
 print(f"🔧 Fawaterak Base URL: {FAWATERAK_BASE_URL}")
 print(f"🔧 Site URL: {SITE_URL}")
+print(f"🔧 Site URL: {SUCCESS_URL}")
+print(f"🔧 Site URL: {FAIL_URL}")
+print(f"🔧 Site URL: {PENDING_URL}")
+
 # Logging configuration
 LOGGING = {
     'version': 1,
