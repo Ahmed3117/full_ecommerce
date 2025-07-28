@@ -2,6 +2,7 @@ from django.urls import path
 
 from products import payment_views
 from products.webhooks import test_webhook, ping_endpoint  # Removed fawaterak_webhook import
+from products.khazenly_webhooks import khazenly_order_status_webhook
 from . import views
 
 app_name = 'products'
@@ -124,5 +125,8 @@ urlpatterns = [
     # Test webhook endpoint for ngrok connectivity
     path('api/test-webhook/', test_webhook, name='test_webhook'),
     path('ping/', ping_endpoint, name='ping_endpoint'),
+    
+    # Khazenly Webhook
+    path('api/webhook/khazenly/order-status/', khazenly_order_status_webhook, name='khazenly_order_status_webhook'),
 ]
 
