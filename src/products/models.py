@@ -490,6 +490,11 @@ class Pill(models.Model):
     # Khazenly fields
     is_shipped = models.BooleanField(default=False)
     khazenly_data = models.JSONField(null=True, blank=True)
+    khazenly_order_id = models.CharField(max_length=100, null=True, blank=True, help_text="Khazenly internal order ID")
+    khazenly_sales_order_number = models.CharField(max_length=100, null=True, blank=True, help_text="Khazenly sales order number (KH-BOOKIFAY-xxxxx)")
+    khazenly_order_number = models.CharField(max_length=100, null=True, blank=True, help_text="Order number sent to Khazenly")
+    khazenly_created_at = models.DateTimeField(null=True, blank=True, help_text="When the Khazenly order was created")
+    
     # Fawaterak fields
     fawaterak_invoice_key = models.CharField(max_length=100, null=True, blank=True)
     fawaterak_data = models.JSONField(null=True, blank=True)
@@ -561,21 +566,39 @@ class Pill(models.Model):
     def _create_khazenly_order(self):
         """Create Khazenly order when is_shipped is set to True"""
         try:
-            from services.khazenly_service import khazenly_service  # Fixed import
+            from services.khazenly_service import khazenly_service
             
             logger.info(f"Creating Khazenly order for pill {self.pill_number}")
             
             result = khazenly_service.create_order(self)
             
             if result['success']:
+                data = result['data']
+                
+                # Store specific Khazenly order information
+                update_fields = {
+                    'khazenly_data': data,
+                    'khazenly_order_id': data.get('khazenly_order_id'),
+                    'khazenly_sales_order_number': data.get('sales_order_number'),
+                    'khazenly_order_number': data.get('order_number', self.pill_number),
+                    'khazenly_created_at': timezone.now()
+                }
+                
                 # Update the model without triggering save again
-                Pill.objects.filter(pk=self.pk).update(khazenly_data=result['data'])
+                Pill.objects.filter(pk=self.pk).update(**update_fields)
+                
                 logger.info(f"✓ Successfully created Khazenly order for pill {self.pill_number}")
+                logger.info(f"  - Khazenly Order ID: {data.get('khazenly_order_id')}")
+                logger.info(f"  - Sales Order Number: {data.get('sales_order_number')}")
+                logger.info(f"  - Order Number: {data.get('order_number')}")
+                
             else:
                 logger.error(f"✗ Failed to create Khazenly order for pill {self.pill_number}: {result['error']}")
                 
         except Exception as e:
             logger.error(f"✗ Error creating Khazenly order for pill {self.pill_number}: {str(e)}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
     
 
     @property
@@ -614,7 +637,7 @@ class Pill(models.Model):
         logger.error(f"Failed to create Fawry payment: {error}")
         return None
     def create_fawaterak_invoice(self):
-        """Create a Fawaterak Fawry invoice for this pill"""
+        """Create a Fawory Fawry invoice for this pill"""
         from services.fawaterak_service import FawaterakService
         
         fawaterak = FawaterakService()

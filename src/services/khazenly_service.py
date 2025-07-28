@@ -3,262 +3,254 @@ import json
 import logging
 from django.conf import settings
 from django.core.cache import cache
+from datetime import datetime, timedelta
+from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
-class KhazenlyAPIService:
+class KhazenlyService:
     def __init__(self):
+        # Updated configuration based on Khazenly feedback
         self.base_url = settings.KHAZENLY_BASE_URL
         self.client_id = settings.KHAZENLY_CLIENT_ID
         self.client_secret = settings.KHAZENLY_CLIENT_SECRET
-        self.store_name = settings.KHAZENLY_STORE_NAME  # Should be "BOOKIFAY"
-        self.refresh_token = getattr(settings, 'KHAZENLY_REFRESH_TOKEN', '')
         
-        self.token_url = f"{self.base_url}/selfservice/services/oauth2/token"
-        self.create_order_url = f"{self.base_url}/services/apexrest/api/CreateOrder"
-    
+        # FIXED: Use the correct store name as provided by Khazenly
+        self.store_name = "https://bookefay.com"  # Updated from BOOKIFAY
+        
+        # FIXED: Use the correct user email for order creation
+        self.order_user_email = "mohamedaymab26@gmail.com"  # Not the API user
+        
+        # Updated tokens from successful authentication
+        self.refresh_token = settings.KHAZENLY_REFRESH_TOKEN
+        
+        # Cache keys
+        self.access_token_cache_key = 'khazenly_access_token'
+        self.token_expiry_cache_key = 'khazenly_token_expiry'
+
     def get_access_token(self):
-        # Try cache first
-        token = cache.get('khazenly_access_token')
-        if token:
-            logger.info("Using cached access token")
-            return token
-        
-        # Use refresh token
-        if self.refresh_token:
-            logger.info("Getting new access token using refresh token")
-            return self.refresh_access_token(self.refresh_token)
-        
-        logger.error("No refresh token available")
-        return None
-    
-    def refresh_access_token(self, refresh_token):
+        """
+        Get valid access token, refresh if needed
+        """
         try:
-            data = {
+            # Check if we have a cached valid token
+            cached_token = cache.get(self.access_token_cache_key)
+            token_expiry = cache.get(self.token_expiry_cache_key)
+            
+            if cached_token and token_expiry:
+                if datetime.now() < token_expiry:
+                    return cached_token
+            
+            # Token expired or doesn't exist, refresh it
+            logger.info("Refreshing Khazenly access token...")
+            
+            # FIXED: Use correct refresh token endpoint with /selfservice prefix from Postman collection
+            token_url = f"{self.base_url}/selfservice/services/oauth2/token"
+            
+            token_data = {
                 'grant_type': 'refresh_token',
-                'refresh_token': refresh_token,
                 'client_id': self.client_id,
-                'client_secret': self.client_secret
+                'client_secret': self.client_secret,
+                'refresh_token': self.refresh_token
             }
             
-            logger.info("Making refresh token request")
-            response = requests.post(self.token_url, data=data, timeout=30)
+            headers = {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'Accept': 'application/json'
+            }
             
-            if response.status_code != 200:
-                logger.error(f"Refresh token failed: {response.text}")
-                return None
+            logger.info(f"Making token request to: {token_url}")
             
-            token_data = response.json()
-            access_token = token_data.get('access_token')
-            new_refresh_token = token_data.get('refresh_token')
+            response = requests.post(token_url, data=token_data, headers=headers, timeout=30)
             
-            if access_token:
-                cache.set('khazenly_access_token', access_token, timeout=23*60*60)
-                if new_refresh_token:
-                    self.refresh_token = new_refresh_token
-                    cache.set('khazenly_refresh_token', new_refresh_token, timeout=None)
+            logger.info(f"Token response status: {response.status_code}")
+            logger.info(f"Token response: {response.text}")
+            
+            if response.status_code == 200:
+                token_response = response.json()
+                access_token = token_response.get('access_token')
                 
-                logger.info("✓ Access token obtained successfully")
-                return access_token
+                if access_token:
+                    # Cache the token (expires in 2 hours by default)
+                    expiry_time = datetime.now() + timedelta(hours=1, minutes=50)  # 10 min buffer
+                    
+                    cache.set(self.access_token_cache_key, access_token, timeout=6600)  # 1h 50m
+                    cache.set(self.token_expiry_cache_key, expiry_time, timeout=6600)
+                    
+                    logger.info("✓ Access token refreshed and cached successfully")
+                    return access_token
+                else:
+                    logger.error("No access_token in response")
+                    return None
             else:
-                logger.error("No access token in refresh response")
+                logger.error(f"Token refresh failed: {response.status_code} - {response.text}")
                 return None
                 
         except Exception as e:
-            logger.error(f"Error refreshing token: {e}")
-        return None
-    
-    def map_government_to_city(self, government):
-        """Map government to valid Khazenly cities"""
-        # Valid cities from Khazenly documentation
-        valid_cities = [
-            'Alexandria', 'Assiut', 'Aswan', 'Bani-Sweif', 'Behera', 'Cairo',
-            'Dakahleya', 'Damietta', 'Fayoum', 'Giza', 'Hurghada', 'Ismailia',
-            'Luxor', 'Mahalla', 'Mansoura', 'Marsa Matrouh', 'Menya', 'Monefeya',
-            'North Coast', 'Port-Said', 'Qalyubia', 'Qena', 'Red Sea', 'Sharkeya',
-            'Sohag', 'Suez', 'Tanta', 'Zagazig', 'Gharbeya', 'Kafr El Sheikh',
-            'Al-Wadi Al-Gadid', 'Sharm El Sheikh', 'North Sinai', 'South Sinai'
-        ]
-        
-        # If it's already a valid city name, return it
-        if government in valid_cities:
-            return government
-        
-        # Try mapping from codes or common names
-        mapping = {
-            'ca': 'Cairo', 'cairo': 'Cairo', '1': 'Cairo',
-            'gz': 'Giza', 'giza': 'Giza', '2': 'Giza',
-            'al': 'Alexandria', 'alexandria': 'Alexandria', '3': 'Alexandria',
-            'as': 'Assiut', 'sw': 'Aswan', 'bs': 'Bani-Sweif',
-            'bh': 'Behera', 'dk': 'Dakahleya', 'dm': 'Damietta',
-            'fy': 'Fayoum', 'hr': 'Hurghada', 'is': 'Ismailia',
-            'lx': 'Luxor', 'mh': 'Mahalla', 'mn': 'Mansoura',
-            'mm': 'Marsa Matrouh', 'my': 'Menya', 'mf': 'Monefeya',
-            'nc': 'North Coast', 'ps': 'Port-Said', 'ql': 'Qalyubia',
-            'qn': 'Qena', 'rs': 'Red Sea', 'sh': 'Sharkeya',
-            'sg': 'Sohag', 'sz': 'Suez', 'tn': 'Tanta',
-            'zg': 'Zagazig', 'gh': 'Gharbeya', 'ks': 'Kafr El Sheikh',
-            'wg': 'Al-Wadi Al-Gadid', 'se': 'Sharm El Sheikh',
-            'ns': 'North Sinai', 'ss': 'South Sinai',
-        }
-        
-        mapped_city = mapping.get(str(government).lower(), 'Cairo')
-        logger.info(f"Mapped government '{government}' to city '{mapped_city}'")
-        return mapped_city
-    
+            logger.error(f"Exception getting access token: {e}")
+            return None
+
     def create_order(self, pill):
+        """
+        Create order in Khazenly with corrected configuration based on working Postman collection
+        """
         try:
-            logger.info(f"=== Creating Khazenly order for pill {pill.pill_number} ===")
+            logger.info(f"Creating Khazenly order for pill {pill.pill_number}")
             
-            # Validation
+            # Get valid access token
+            access_token = self.get_access_token()
+            if not access_token:
+                return {'success': False, 'error': 'Failed to get access token'}
+            
+            # Validate pill has required data
             if not hasattr(pill, 'pilladdress'):
-                return {'success': False, 'error': 'Pill has no address information'}
-            
-            if not pill.items.exists():
-                return {'success': False, 'error': 'Pill has no items'}
+                return {'success': False, 'error': 'Pill address information missing'}
             
             address = pill.pilladdress
             
-            # Validate required address fields
-            if not address.phone:
-                return {'success': False, 'error': 'Customer phone number is required'}
+            # FIXED: Create unique order ID to avoid conflicts
+            timestamp_suffix = int(timezone.now().timestamp())
+            unique_order_id = f"{pill.pill_number}-{timestamp_suffix}"
             
-            if not address.address:
-                return {'success': False, 'error': 'Customer address is required'}
-            
-            if not address.name:
-                return {'success': False, 'error': 'Customer name is required'}
-            
-            access_token = self.get_access_token()
-            if not access_token:
-                return {'success': False, 'error': 'Could not get access token'}
-            
-            # Create line items
+            # Prepare line items with corrected format from Postman collection
             line_items = []
-            total_items_price = 0
+            total_product_price = 0
             
             for item in pill.items.all():
-                # Generate unique SKU
-                sku = f"BOOKIFAY-{item.product.id}"
-                if item.size:
-                    sku += f"-{item.size}"
-                if item.color:
-                    sku += f"-{item.color.name.replace(' ', '').replace('-', '')}"
+                item_price = float(item.product.discounted_price())
+                total_product_price += item_price * item.quantity
                 
-                unit_price = float(item.product.discounted_price())
-                total_items_price += unit_price * item.quantity
-                    
+                # FIXED: Use exact field names from working Postman collection
                 line_items.append({
-                    "SKU": sku,
-                    "Price": unit_price,
-                    "ItemId": str(item.product.id),
-                    "ItemName": item.product.name[:100],  # Limit length
-                    "Quantity": item.quantity,
-                    "DiscountAmount": 0.0  # Individual item discount
+                    "sku": unique_order_id,  # Use unique order ID as SKU
+                    "itemName": unique_order_id,  # Same as SKU per requirement
+                    "price": item_price,  # lowercase as in collection
+                    "quantity": item.quantity,  # lowercase as in collection
+                    "discountAmount": 0,  # lowercase as in collection
+                    "itemId": None  # lowercase as in collection
                 })
             
-            # Calculate totals
-            discount_amount = float(pill.coupon_discount + pill.calculate_gift_discount())
+            # Calculate amounts
             shipping_fees = float(pill.shipping_price())
-            tax_amount = 0.0  # Assuming no tax for now
+            discount_amount = float(pill.coupon_discount + pill.calculate_gift_discount())
+            total_amount = total_product_price + shipping_fees - discount_amount
             
-            # Total amount calculation: items - discount + shipping + tax
-            total_amount = total_items_price - discount_amount + shipping_fees + tax_amount
-            invoice_total = float(pill.final_price())
-            
-            # Map city
-            city = self.map_government_to_city(address.government)
-            
-            # Payment method and status
-            if address.pay_method == 'c':
-                payment_method = "Cash-on-Delivery"
-                payment_status = "pending"
-            else:
-                payment_method = "Pre-Paid"
-                payment_status = "paid" if pill.paid else "pending"
-            
-            # Build the payload according to Khazenly specification
-            payload = {
+            # FIXED: Use exact structure from working Postman collection
+            order_data = {
                 "Order": {
-                    # Required Order fields
-                    "orderId": pill.pill_number,
+                    "orderId": unique_order_id,  # Use unique order ID
+                    "orderNumber": unique_order_id,  # Use unique order ID
+                    "storeName": self.store_name,  # https://bookefay.com
                     "totalAmount": total_amount,
-                    "invoiceTotalAmount": invoice_total,
-                    "taxAmount": tax_amount,
-                    "orderNumber": pill.pill_number,
-                    "paymentMethod": payment_method,
-                    "weight": 1.0,  # Default weight in kg
-                    "storeCurrency": "EGP",
-                    "discountAmount": discount_amount,
                     "shippingFees": shipping_fees,
-                    "storeName": self.store_name,  # "BOOKIFAY"
-                    
-                    # Optional Order fields
-                    "paymentStatus": payment_status,
-                    "isPickedByMerchant": False,
+                    "discountAmount": discount_amount,
+                    "taxAmount": 0,
+                    "invoiceTotalAmount": total_amount,
+                    "weight": 0,
+                    "noOfBoxes": 1,
+                    "paymentMethod": "Cash-on-Delivery",  # Exact string from collection
+                    "paymentStatus": "pending",
+                    "storeCurrency": "EGP",
+                    "isPickedByMerchant": False,  # Boolean, not lowercase
                     "merchantAWB": "",
                     "merchantCourier": "",
                     "merchantAwbDocument": "",
-                    "additionalNotes": f"Order from Django - User: {pill.user.username}",
-                    "noOfBoxes": 1
+                    "additionalNotes": f"Order for pill {pill.pill_number}"
                 },
                 "Customer": {
-                    # Required Customer fields
-                    "Address1": address.address,
-                    "City": city,
-                    "Country": "Egypt",
                     "customerName": address.name,
-                    "Tel": address.phone,
-                    
-                    # Optional Customer fields
-                    "Address2": "",
-                    "Address3": "",
-                    "customerId": str(pill.user.id),
-                    "secondaryTel": ""
+                    "tel": address.phone.replace('+', '').replace('-', '').replace(' ', '') if address.phone else "",  # lowercase 'tel'
+                    "secondaryTel": "",  # lowercase with capital T
+                    "address1": address.address,  # lowercase with number
+                    "address2": "",
+                    "address3": "",
+                    "city": address.get_government_display(),  # lowercase 'city'
+                    "country": "Egypt",  # lowercase 'country'
+                    "customerId": None  # lowercase with capital I
                 },
                 "lineItems": line_items
             }
             
-            # Log the payload for debugging
-            logger.info(f"Store Name: {self.store_name}")
-            logger.info(f"Total Items Price: {total_items_price}")
-            logger.info(f"Discount Amount: {discount_amount}")
-            logger.info(f"Shipping Fees: {shipping_fees}")
-            logger.info(f"Total Amount: {total_amount}")
-            logger.info(f"Invoice Total: {invoice_total}")
-            logger.info(f"City: {city}")
-            logger.info(f"Payment: {payment_method} - {payment_status}")
+            # FIXED: Use correct API endpoint from Postman collection
+            api_url = f"{self.base_url}/services/apexrest/api/CreateOrder"
             
-            logger.info("=== PAYLOAD ===")
-            logger.info(json.dumps(payload, indent=2))
-            
-            # Make the API request
             headers = {
-                'auth': f'Bearer {access_token}',
-                'Content-Type': 'application/json'
+                'Authorization': f'Bearer {access_token}',
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
             }
             
-            response = requests.post(self.create_order_url, json=payload, headers=headers, timeout=60)
+            logger.info(f"Making order request to: {api_url}")
+            logger.info(f"Order data: {json.dumps(order_data, indent=2)}")
             
-            logger.info(f"Response Status: {response.status_code}")
-            logger.info(f"Response: {response.text}")
+            response = requests.post(api_url, json=order_data, headers=headers, timeout=60)
+            
+            logger.info(f"Khazenly order response status: {response.status_code}")
+            logger.info(f"Khazenly order response: {response.text}")
             
             if response.status_code == 200:
                 response_data = response.json()
-                if response_data.get('resultCode') == 0:  # Success
-                    logger.info(f"✓ Khazenly order created successfully for pill {pill.pill_number}")
-                    return {'success': True, 'data': response_data}
+                
+                # Check for success
+                if response_data.get('resultCode') == 0:
+                    order_info = response_data.get('order', {})
+                    
+                    logger.info(f"✓ Khazenly order created successfully: {order_info.get('salesOrderNumber')}")
+                    
+                    return {
+                        'success': True,
+                        'data': {
+                            'khazenly_order_id': order_info.get('id'),
+                            'sales_order_number': order_info.get('salesOrderNumber'),
+                            'order_number': order_info.get('orderNumber'),
+                            'line_items': response_data.get('lineItems', []),
+                            'customer': response_data.get('customer', {}),
+                            'raw_response': response_data
+                        }
+                    }
                 else:
-                    logger.error(f"Khazenly returned error: {response_data}")
-                    return {'success': False, 'error': f"Khazenly error: {response_data.get('result', 'Unknown error')}"}
+                    error_msg = response_data.get('message', 'Unknown error from Khazenly')
+                    logger.error(f"Khazenly order creation failed: {error_msg}")
+                    return {'success': False, 'error': error_msg}
             else:
-                logger.error(f"HTTP error: {response.status_code} - {response.text}")
-                return {'success': False, 'error': f"HTTP {response.status_code}: {response.text}"}
-            
+                logger.error(f"HTTP error creating Khazenly order: {response.status_code} - {response.text}")
+                return {'success': False, 'error': f'HTTP {response.status_code}: {response.text}'}
+                
         except Exception as e:
-            logger.error(f"Exception creating order: {e}")
+            logger.error(f"Exception creating Khazenly order: {e}")
             import traceback
             logger.error(f"Traceback: {traceback.format_exc()}")
-            return {'success': False, 'error': f"Exception: {str(e)}"}
+            return {'success': False, 'error': str(e)}
 
-khazenly_service = KhazenlyAPIService()
+    def get_order_status(self, sales_order_number):
+        """
+        Get order status from Khazenly
+        """
+        try:
+            access_token = self.get_access_token()
+            if not access_token:
+                return {'success': False, 'error': 'Failed to get access token'}
+            
+            # Construct status check URL
+            status_url = f"{self.base_url}/services/apexrest/ExternalIntegrationWebService/orders/{sales_order_number}"
+            
+            headers = {
+                'Authorization': f'Bearer {access_token}',
+                'Accept': 'application/json'
+            }
+            
+            logger.info(f"Checking order status: {status_url}")
+            
+            response = requests.get(status_url, headers=headers, timeout=30)
+            
+            if response.status_code == 200:
+                return {'success': True, 'data': response.json()}
+            else:
+                return {'success': False, 'error': f'HTTP {response.status_code}: {response.text}'}
+                
+        except Exception as e:
+            logger.error(f"Exception getting order status: {e}")
+            return {'success': False, 'error': str(e)}
+
+# Global instance
+khazenly_service = KhazenlyService()

@@ -217,6 +217,7 @@ def fawaterak_webhook(request):
             pill = Pill.objects.get(pill_number=pill_number)
             pill.paid = True
             pill.status = 'p'
+            pill.invoice_id = webhook_data.get('invoice_id')
             pill.save()
 
             return Response({
