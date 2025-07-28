@@ -202,32 +202,37 @@ def fawaterak_webhook(request):
     print("-------------------------------------------")
     print('i am in webhook view')
     print("-------------------------------------------")
-    """Handle Fawaterak payment webhooks"""
+    
     try:
         webhook_data = request.data if hasattr(request, 'data') else json.loads(request.body.decode('utf-8'))
-        
         logger.info(f"Received Fawaterak webhook: {webhook_data}")
-        
-        # result = fawaterak_service.process_webhook_payment(webhook_data)
-        
-        if webhook_data['invoice_status'] == 'paid':
-            pill = Pill.objects.get(pill_number = webhook_data['pay_load']['pill_number'] )
+
+        # Ensure pay_load is a dict
+        pay_load = webhook_data.get('pay_load')
+        if isinstance(pay_load, str):
+            pay_load = json.loads(pay_load)
+
+        if webhook_data.get('invoice_status') == 'paid':
+            pill_number = pay_load.get('pill_number')
+            pill = Pill.objects.get(pill_number=pill_number)
             pill.paid = True
             pill.status = 'p'
+            pill.save()
+
             return Response({
                 'success': True,
                 'message': 'Webhook processed successfully',
-                'data': webhook_data['data']
+                'data': webhook_data
             }, status=status.HTTP_200_OK)
         else:
-            logger.error(f"Webhook processing failed: {webhook_data['error']}")
+            logger.error(f"Webhook processing failed: {webhook_data.get('error', 'No error message')}")
             return Response({
                 'success': False,
-                'error': webhook_data['error']
+                'error': webhook_data.get('error', 'Unknown error')
             }, status=status.HTTP_400_BAD_REQUEST)
-            
+
     except Exception as e:
-        logger.error(f"Exception in webhook: {e}")
+        logger.exception("Exception in webhook handler")
         return Response({
             'success': False,
             'error': 'Internal server error'
