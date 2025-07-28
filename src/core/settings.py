@@ -272,6 +272,9 @@ KHAZENLY_STORE_NAME = os.getenv('KHAZENLY_STORE_NAME', '')
 KHAZENLY_AUTHORIZATION_CODE = os.getenv('KHAZENLY_AUTHORIZATION_CODE', '')
 KHAZENLY_REFRESH_TOKEN = os.getenv('KHAZENLY_REFRESH_TOKEN', '') 
 
+# Khazenly Webhook Configuration
+KHAZENLY_WEBHOOK_SECRET = os.getenv('KHAZENLY_WEBHOOK_SECRET', '')  # Will be provided by Khazenly
+
 
 # Fawaterak Configuration - with fallbacks and validation
 # Site URL
