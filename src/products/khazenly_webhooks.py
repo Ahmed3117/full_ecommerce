@@ -14,13 +14,33 @@ from django.utils import timezone
 logger = logging.getLogger(__name__)
 
 @csrf_exempt
-@require_http_methods(["POST"])
+@require_http_methods(["GET", "POST"])  # FIXED: Allow both GET and POST
 def khazenly_order_status_webhook(request):
     """
     Khazenly Order Status Update Webhook Handler
     
-    Handles incoming order status updates from Khazenly platform
-    Documentation: https://documenter.getpostman.com/view/21838550/2s9YCBv9oV#1c6647d2-e290-4e9f-8569-bd757c7d69ee
+    GET: Health check for monitoring services
+    POST: Actual webhook processing
+    """
+    
+    # Handle GET requests (health checks from monitoring services)
+    if request.method == 'GET':
+        logger.info("GET request received - Health check")
+        return JsonResponse({
+            'status': 'ok',
+            'message': 'Khazenly webhook endpoint is healthy',
+            'method': 'GET',
+            'timestamp': timezone.now().isoformat(),
+            'endpoint': 'khazenly-order-status-webhook'
+        }, status=200)
+    
+    # Handle POST requests (actual webhooks)
+    if request.method == 'POST':
+        return handle_khazenly_webhook_post(request)
+
+def handle_khazenly_webhook_post(request):
+    """
+    Handle actual Khazenly webhook POST requests
     """
     try:
         # Log the incoming webhook
@@ -28,13 +48,21 @@ def khazenly_order_status_webhook(request):
         logger.info(f"Headers: {dict(request.headers)}")
         logger.info(f"Body: {request.body.decode('utf-8')}")
         
-        # Verify HMAC if configured (optional but recommended for production)
+        # Verify HMAC signature for webhook security
+        hmac_header = request.headers.get('khazenly_hmac_sha256')
         if hasattr(settings, 'KHAZENLY_WEBHOOK_SECRET') and settings.KHAZENLY_WEBHOOK_SECRET:
-            hmac_header = request.headers.get('khazenly_hmac_sha256')
+            logger.info(f"HMAC verification enabled. Header present: {bool(hmac_header)}")
+            
             if hmac_header:
                 if not verify_webhook_signature(request.body, hmac_header, settings.KHAZENLY_WEBHOOK_SECRET):
-                    logger.error("Invalid webhook signature")
+                    logger.error("❌ Invalid webhook signature - potential security threat!")
                     return JsonResponse({'error': 'Invalid signature'}, status=401)
+                else:
+                    logger.info("✅ Webhook signature verified successfully")
+            else:
+                logger.warning("⚠️ HMAC secret configured but no signature header received")
+        else:
+            logger.info("ℹ️ HMAC verification disabled (no secret configured)")
         
         # Parse the webhook payload
         try:
@@ -110,7 +138,7 @@ def khazenly_order_status_webhook(request):
         logger.error(f"Traceback: {traceback.format_exc()}")
         return JsonResponse({'error': 'Internal server error'}, status=500)
 
-
+# Keep all your other functions unchanged:
 def verify_webhook_signature(payload, signature, secret):
     """
     Verify HMAC signature for webhook security
@@ -130,19 +158,9 @@ def verify_webhook_signature(payload, signature, secret):
         logger.error(f"Error verifying webhook signature: {e}")
         return False
 
-
 def update_pill_status_from_khazenly(pill, khazenly_status):
     """
     Update pill status based on Khazenly order status
-    
-    Khazenly Status -> Pill Status Mapping:
-    - "New Order" -> No change (order created)
-    - "Order Being Prepared" -> No change
-    - "Order Ready" -> No change  
-    - "Out for Delivery" -> "Under Delivery" (u)
-    - "Order Delivered" -> "Delivered" (d)
-    - "Order Delivery Failed" -> "Refused" (r)
-    - "Cancelled", "Voided", "Deleted" -> "Canceled" (c)
     """
     try:
         old_status = pill.status
@@ -173,7 +191,6 @@ def update_pill_status_from_khazenly(pill, khazenly_status):
     except Exception as e:
         logger.error(f"Error updating pill status: {e}")
         return False
-
 
 def store_webhook_data(pill, payload):
     """
