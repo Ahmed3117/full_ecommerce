@@ -504,17 +504,17 @@ class Pill(models.Model):
         if not self.pill_number:
             self.pill_number = generate_pill_number()
 
-        # Track if is_shipped is being changed
-        is_new_shipped = False
+        # Track if paid status is being changed to True
+        is_newly_paid = False
         if self.pk:
             try:
                 old_pill = Pill.objects.get(pk=self.pk)
-                if not old_pill.is_shipped and self.is_shipped:
-                    is_new_shipped = True
+                if not old_pill.paid and self.paid:
+                    is_newly_paid = True
             except Pill.DoesNotExist:
                 pass
-        elif self.is_shipped:
-            is_new_shipped = True
+        elif self.paid:
+            is_newly_paid = True
 
         is_new = not self.pk
         old_status = None if is_new else Pill.objects.get(pk=self.pk).status
@@ -559,12 +559,12 @@ class Pill(models.Model):
                     super().save(*args, **kwargs)
                     self.send_payment_notification()
 
-        # Create Khazenly order if is_shipped was just set to True
-        if is_new_shipped:
+        # Create Khazenly order if paid was just set to True
+        if is_newly_paid:
             self._create_khazenly_order()
 
     def _create_khazenly_order(self):
-        """Create Khazenly order when is_shipped is set to True"""
+        """Create Khazenly order when paid becomes True"""
         try:
             from services.khazenly_service import khazenly_service
             
@@ -575,13 +575,14 @@ class Pill(models.Model):
             if result['success']:
                 data = result['data']
                 
-                # Store specific Khazenly order information
+                # Store specific Khazenly order information and set is_shipped to True
                 update_fields = {
                     'khazenly_data': data,
                     'khazenly_order_id': data.get('khazenly_order_id'),
                     'khazenly_sales_order_number': data.get('sales_order_number'),
                     'khazenly_order_number': data.get('order_number', self.pill_number),
-                    'khazenly_created_at': timezone.now()
+                    'khazenly_created_at': timezone.now(),
+                    'is_shipped': True  # Set is_shipped to True after successful order creation
                 }
                 
                 # Update the model without triggering save again
@@ -591,6 +592,7 @@ class Pill(models.Model):
                 logger.info(f"  - Khazenly Order ID: {data.get('khazenly_order_id')}")
                 logger.info(f"  - Sales Order Number: {data.get('sales_order_number')}")
                 logger.info(f"  - Order Number: {data.get('order_number')}")
+                logger.info(f"  - is_shipped set to True")
                 
             else:
                 logger.error(f"✗ Failed to create Khazenly order for pill {self.pill_number}: {result['error']}")
