@@ -14,7 +14,7 @@ from django.utils import timezone
 logger = logging.getLogger(__name__)
 
 @csrf_exempt
-@require_http_methods(["GET", "POST"])  # FIXED: Allow both GET and POST
+@require_http_methods(["GET", "POST","HEAD"])  # FIXED: Allow both GET and POST
 def khazenly_order_status_webhook(request):
     """
     Khazenly Order Status Update Webhook Handler
