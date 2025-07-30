@@ -14,12 +14,12 @@ from django.utils import timezone
 logger = logging.getLogger(__name__)
 
 @csrf_exempt
-@require_http_methods(["GET", "POST","HEAD"])  # FIXED: Allow both GET and POST
+@require_http_methods(["GET", "POST", "HEAD"])
 def khazenly_order_status_webhook(request):
     """
     Khazenly Order Status Update Webhook Handler
     
-    GET: Health check for monitoring services
+    GET: Health check for monitoring services  
     POST: Actual webhook processing
     """
     
@@ -48,8 +48,10 @@ def handle_khazenly_webhook_post(request):
         logger.info(f"Headers: {dict(request.headers)}")
         logger.info(f"Body: {request.body.decode('utf-8')}")
         
+        # FIXED: Check for correct HMAC header name from Khazenly
+        hmac_header = request.headers.get('khazenly-hmac-sha256') or request.headers.get('Khazenly-Hmac-Sha256')
+        
         # Verify HMAC signature for webhook security
-        hmac_header = request.headers.get('khazenly_hmac_sha256')
         if hasattr(settings, 'KHAZENLY_WEBHOOK_SECRET') and settings.KHAZENLY_WEBHOOK_SECRET:
             logger.info(f"HMAC verification enabled. Header present: {bool(hmac_header)}")
             
@@ -86,27 +88,18 @@ def handle_khazenly_webhook_post(request):
             logger.error("Missing required fields: status or orderReference")
             return JsonResponse({'error': 'Missing required fields'}, status=400)
         
-        # Find the corresponding pill
-        pill = None
-        
-        # Try to find by Khazenly sales order number first
-        if order_reference:
-            pill = Pill.objects.filter(khazenly_sales_order_number=order_reference).first()
-        
-        # Fallback: try to find by merchant reference (our order number with timestamp)
-        if not pill and merchant_reference:
-            # Merchant reference could be like "92669214257708369311-1753673013"
-            # So we need to extract the base pill number
-            base_pill_number = merchant_reference.split('-')[0] if '-' in merchant_reference else merchant_reference
-            pill = Pill.objects.filter(pill_number=base_pill_number).first()
-        
-        # Fallback: try to find by stored order number
-        if not pill and merchant_reference:
-            pill = Pill.objects.filter(khazenly_order_number=merchant_reference).first()
+        # FIXED: Improved pill lookup logic
+        pill = find_pill_from_webhook_data(order_reference, merchant_reference, order_supplier_id)
         
         if not pill:
             logger.warning(f"No pill found for order reference: {order_reference}, merchant reference: {merchant_reference}")
-            return JsonResponse({'error': 'Order not found'}, status=404)
+            # Return success to prevent webhook retries, but log the issue
+            return JsonResponse({
+                'success': True,
+                'message': 'Order not found in system',
+                'order_reference': order_reference,
+                'merchant_reference': merchant_reference
+            }, status=200)
         
         # Update pill status based on Khazenly status
         pill_status_updated = update_pill_status_from_khazenly(pill, status)
@@ -137,6 +130,53 @@ def handle_khazenly_webhook_post(request):
         import traceback
         logger.error(f"Traceback: {traceback.format_exc()}")
         return JsonResponse({'error': 'Internal server error'}, status=500)
+
+def find_pill_from_webhook_data(order_reference, merchant_reference, order_supplier_id):
+    """
+    FIXED: Enhanced pill lookup logic to handle different reference formats
+    """
+    pill = None
+    
+    # Method 1: Try to find by Khazenly sales order number
+    if order_reference:
+        pill = Pill.objects.filter(khazenly_sales_order_number=order_reference).first()
+        if pill:
+            logger.info(f"Found pill by khazenly_sales_order_number: {order_reference}")
+            return pill
+    
+    # Method 2: Try to find by stored Khazenly order number  
+    if order_reference:
+        pill = Pill.objects.filter(khazenly_order_number=order_reference).first()
+        if pill:
+            logger.info(f"Found pill by khazenly_order_number: {order_reference}")
+            return pill
+    
+    # Method 3: Parse merchant reference to extract pill number
+    # Format: "32344218672684726125-1753816161" -> extract "32344218672684726125"
+    if merchant_reference:
+        base_pill_number = merchant_reference.split('-')[0] if '-' in merchant_reference else merchant_reference
+        pill = Pill.objects.filter(pill_number=base_pill_number).first()
+        if pill:
+            logger.info(f"Found pill by extracted pill_number: {base_pill_number}")
+            return pill
+    
+    # Method 4: Try order_supplier_id if different from merchant_reference
+    if order_supplier_id and order_supplier_id != merchant_reference:
+        base_supplier_id = order_supplier_id.split('-')[0] if '-' in order_supplier_id else order_supplier_id
+        pill = Pill.objects.filter(pill_number=base_supplier_id).first()
+        if pill:
+            logger.info(f"Found pill by extracted order_supplier_id: {base_supplier_id}")
+            return pill
+    
+    # Method 5: Try exact match on pill_number with full merchant reference
+    if merchant_reference:
+        pill = Pill.objects.filter(pill_number=merchant_reference).first()
+        if pill:
+            logger.info(f"Found pill by exact merchant_reference: {merchant_reference}")
+            return pill
+    
+    logger.warning(f"No pill found using any method for: order_ref={order_reference}, merchant_ref={merchant_reference}, supplier_id={order_supplier_id}")
+    return None
 
 # Keep all your other functions unchanged:
 def verify_webhook_signature(payload, signature, secret):
