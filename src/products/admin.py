@@ -68,7 +68,7 @@ class DiscountInline(admin.TabularInline):
 
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
-    list_display = ('name', 'type','get_base_image_preview', 'category', 'price', 'get_total_quantity', 'average_rating', 'is_important', 'date_added')
+    list_display = ('name','product_number' ,'type','get_base_image_preview', 'category', 'price', 'get_total_quantity', 'average_rating', 'is_important', 'date_added')
     list_filter = ('category', 'brand', 'is_important', 'date_added')
     search_fields = ('name', 'description')
     autocomplete_fields = ('category', 'sub_category', 'brand')

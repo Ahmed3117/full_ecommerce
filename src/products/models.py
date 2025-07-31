@@ -76,6 +76,12 @@ def generate_pill_number():
         pill_number = ''.join(random.choices(string.digits, k=20))
         if not Pill.objects.filter(pill_number=pill_number).exists():
             return pill_number
+def generate_product_number():
+    """Generate a unique 20-digit pill number."""
+    while True:
+        product_number = ''.join(random.choices(string.digits, k=20))
+        if not Product.objects.filter(product_number=product_number).exists():
+            return product_number
 
 def create_random_coupon():
     letters = string.ascii_lowercase
@@ -152,6 +158,7 @@ class Teacher(models.Model):
         return self.name
 
 class Product(models.Model):
+    product_number = models.CharField(max_length=20, editable=False, null=True, blank=True)
     product_type = [
             ('book', 'Book'),
             ('product', 'Product'),
@@ -278,6 +285,11 @@ class Product(models.Model):
     
     def __str__(self):
         return self.name
+
+    def save(self, *args, **kwargs):
+        if not self.product_number:
+            self.product_number = generate_product_number()
+        super().save(*args, **kwargs)
 
     class Meta:
         ordering = ['-date_added']
@@ -580,7 +592,6 @@ class Pill(models.Model):
                     'khazenly_data': data,
                     'khazenly_order_id': data.get('khazenly_order_id'),
                     'khazenly_sales_order_number': data.get('sales_order_number'),
-                    'khazenly_order_number': data.get('order_number', self.pill_number),
                     'khazenly_created_at': timezone.now(),
                     'is_shipped': True  # Set is_shipped to True after successful order creation
                 }

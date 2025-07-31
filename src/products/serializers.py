@@ -171,11 +171,14 @@ class ProductSerializer(serializers.ModelSerializer):
     class Meta:
         model = Product
         fields = [
-            'id', 'name','type','year','category','sub_category','brand','subject' ,'teacher' , 'category_id', 'category_name', 'subject_id' ,'subject_name' , 'teacher_id' ,'teacher_name','teacher_image', 'sub_category_id', 'sub_category_name',
+            'id', 'product_number','name','type','year','category','sub_category','brand','subject' ,'teacher' , 'category_id', 'category_name', 'subject_id' ,'subject_name' , 'teacher_id' ,'teacher_name','teacher_image', 'sub_category_id', 'sub_category_name',
             'brand_id', 'brand_name', 'price', 'description', 'date_added', 'discounted_price',
             'has_discount', 'current_discount', 'discount_expiry', 'main_image', 'images', 'number_of_ratings',
             'average_rating', 'total_quantity', 'available_colors', 'available_sizes', 'availabilities',
             'descriptions', 'threshold', 'is_low_stock', 'is_important','base_image'
+        ]
+        read_only_fields = [
+            'product_number'
         ]
 
     def get_category_id(self, obj):
