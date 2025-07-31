@@ -112,61 +112,87 @@ class KhazenlyService:
             timestamp_suffix = int(timezone.now().timestamp())
             unique_order_id = f"{pill.pill_number}-{timestamp_suffix}"
             
-            # Prepare line items with corrected format from Postman collection
+            # Prepare line items with logical product data
             line_items = []
             total_product_price = 0
             
             for item in pill.items.all():
-                item_price = float(item.product.discounted_price())
-                total_product_price += item_price * item.quantity
+                product = item.product
+                original_price = float(product.price) if product.price else 0
+                discounted_price = float(product.discounted_price())
+                item_discount = original_price - discounted_price
                 
-                # FIXED: Use exact field names from working Postman collection
+                total_product_price += discounted_price * item.quantity
+                
+                # Use logical product data for line items
                 line_items.append({
-                    "sku": unique_order_id,  # Use unique order ID as SKU
-                    "itemName": unique_order_id,  # Same as SKU per requirement
-                    "price": item_price,  # lowercase as in collection
-                    "quantity": item.quantity,  # lowercase as in collection
-                    "discountAmount": 0,  # lowercase as in collection
-                    "itemId": None  # lowercase as in collection
+                    "sku": product.product_number if product.product_number else f"PROD-{product.id}",  # Use product number as SKU
+                    "itemName": product.name,  # Use actual product name
+                    "price": discounted_price,  # Use discounted price
+                    "quantity": item.quantity,  # Item quantity
+                    "discountAmount": item_discount,  # Actual discount on the product
+                    "itemId": item.id  # Pill item ID
                 })
             
-            # Calculate amounts
+            # Calculate amounts with proper gift and coupon discounts
             shipping_fees = float(pill.shipping_price())
-            discount_amount = float(pill.coupon_discount + pill.calculate_gift_discount())
-            total_amount = total_product_price + shipping_fees - discount_amount
+            gift_discount = float(pill.calculate_gift_discount())
+            coupon_discount = float(pill.coupon_discount) if pill.coupon_discount else 0
+            total_discount = gift_discount + coupon_discount
+            total_amount = total_product_price + shipping_fees - total_discount
             
-            # FIXED: Use exact structure from working Postman collection
+            # FIXED: Customer data format based on Khazenly requirements
+            # Clean phone number more thoroughly
+            clean_phone = ""
+            if address.phone:
+                clean_phone = ''.join(filter(str.isdigit, address.phone))
+                # Ensure phone starts with country code for Egypt if it doesn't
+                if clean_phone and not clean_phone.startswith('20'):
+                    if clean_phone.startswith('0'):
+                        clean_phone = '20' + clean_phone[1:]  # Replace leading 0 with +20
+                    else:
+                        clean_phone = '20' + clean_phone  # Add +20 prefix
+            
+            # Get proper city name from government choices
+            city_name = "Cairo"  # Default fallback
+            if hasattr(address, 'government') and address.government:
+                from products.models import GOVERNMENT_CHOICES
+                gov_dict = dict(GOVERNMENT_CHOICES)
+                city_name = gov_dict.get(address.government, "Cairo")
+            elif address.city:
+                city_name = address.city
+            
             order_data = {
                 "Order": {
-                    "orderId": unique_order_id,  # Use unique order ID
-                    "orderNumber": unique_order_id,  # Use unique order ID
-                    "storeName": self.store_name,  # https://bookefay.com
+                    "orderId": unique_order_id,
+                    "orderNumber": pill.pill_number,
+                    "storeName": self.store_name,
                     "totalAmount": total_amount,
                     "shippingFees": shipping_fees,
-                    "discountAmount": discount_amount,
+                    "discountAmount": total_discount,
                     "taxAmount": 0,
                     "invoiceTotalAmount": total_amount,
                     "weight": 0,
                     "noOfBoxes": 1,
-                    "paymentMethod": "Cash-on-Delivery",  # Exact string from collection
+                    "paymentMethod": "Cash-on-Delivery",
                     "paymentStatus": "pending",
                     "storeCurrency": "EGP",
-                    "isPickedByMerchant": False,  # Boolean, not lowercase
+                    "isPickedByMerchant": False,
                     "merchantAWB": "",
                     "merchantCourier": "",
                     "merchantAwbDocument": "",
-                    "additionalNotes": f"Order for pill {pill.pill_number}"
+                    "additionalNotes": f"Order for pill {pill.pill_number} - {len(line_items)} items"
                 },
                 "Customer": {
-                    "customerName": address.name,
-                    "tel": address.phone.replace('+', '').replace('-', '').replace(' ', '') if address.phone else "",  # lowercase 'tel'
-                    "secondaryTel": "",  # lowercase with capital T
-                    "address1": address.address,  # lowercase with number
+                    "customerName": (address.name or f"Customer {pill.user.username}")[:50],  # Limit name length
+                    "tel": clean_phone,  # Use properly formatted phone
+                    "secondaryTel": "",
+                    "address1": (address.address or "Address not provided")[:100],  # Limit address length
                     "address2": "",
                     "address3": "",
-                    "city": address.get_government_display(),  # lowercase 'city'
-                    "country": "Egypt",  # lowercase 'country'
-                    "customerId": None  # lowercase with capital I
+                    "city": city_name,
+                    "country": "Egypt",
+                    "customerId": f"USER-{pill.user.id}"  # Use prefixed customer ID format
                 },
                 "lineItems": line_items
             }
