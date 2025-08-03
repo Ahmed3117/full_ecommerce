@@ -1063,6 +1063,14 @@ class LovedProductSerializer(serializers.ModelSerializer):
         fields = ['id', 'product', 'product_id', 'created_at']
         read_only_fields = ['id', 'created_at']
 
+
+
+
+
+
+
+
+
 class StockAlertSerializer(serializers.ModelSerializer):
     class Meta:
         model = StockAlert

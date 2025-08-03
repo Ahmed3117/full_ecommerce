@@ -493,109 +493,6 @@ class ProductAvailabilitiesView(generics.ListAPIView):
         product_id = self.kwargs['product_id']
         return ProductAvailability.objects.filter(product_id=product_id)
 
-class StockAlertCreateView(generics.CreateAPIView):
-    serializer_class = StockAlertSerializer
-    permission_classes = [AllowAny]
-
-    def create(self, request, *args, **kwargs):
-        product_id = request.data.get('product')
-        email = request.data.get('email')
-        user = request.user if request.user.is_authenticated else None
-        product = get_object_or_404(Product, id=product_id)
-        if product.total_quantity() > 0:
-            return Response(
-                {"error": "Product is already in stock"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        existing_alert = StockAlert.objects.filter(
-            product=product,
-            user=user if user else None,
-            email=email if not user else None
-        ).exists()
-        if existing_alert:
-            return Response(
-                {"error": "You already requested an alert for this product"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        serializer.save(user=user)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
-
-class PriceDropAlertCreateView(generics.CreateAPIView):
-    serializer_class = PriceDropAlertSerializer
-    permission_classes = [AllowAny]
-
-    def create(self, request, *args, **kwargs):
-        product_id = request.data.get('product')
-        email = request.data.get('email')
-        user = request.user if request.user.is_authenticated else None
-        last_price = request.data.get('last_price')
-        product = get_object_or_404(Product, id=product_id)
-        alert, created = PriceDropAlert.objects.update_or_create(
-            product=product,
-            user=user if user else None,
-            email=email if not user else None,
-            defaults={
-                'last_price': last_price or product.price,
-                'is_notified': False
-            }
-        )
-        status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
-        serializer = self.get_serializer(alert)
-        return Response(serializer.data, status=status_code)
-
-class UserActiveAlertsView(generics.ListAPIView):
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request):
-        back_in_stock_alerts = StockAlert.objects.filter(
-            user=request.user,
-            is_notified=False
-        ).select_related('product').annotate(
-            available_quantity=Sum('product__availabilities__quantity')
-        ).filter(
-            available_quantity__gt=0
-        )
-        price_drop_alerts = PriceDropAlert.objects.filter(
-            user=request.user,
-            is_notified=False
-        ).select_related('product').filter(
-            product__price__lt=F('last_price')
-        )
-        back_in_stock_data = []
-        for alert in back_in_stock_alerts:
-            product_data = ProductSerializer(alert.product, context={'request': request}).data
-            back_in_stock_data.append(product_data)
-        price_drop_data = []
-        for alert in price_drop_alerts:
-            alert_data = PriceDropAlertSerializer(alert).data
-            product_data = ProductSerializer(alert.product, context={'request': request}).data
-            alert_data['product_data'] = product_data
-            price_drop_data.append(alert_data)
-        return Response({
-            'back_in_stock_alerts': back_in_stock_data,
-            'price_drop_alerts': price_drop_data
-        })
-
-class MarkAlertAsNotifiedView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def post(self, request, alert_type, alert_id):
-        if alert_type == 'stock':
-            model = StockAlert
-        elif alert_type == 'price':
-            model = PriceDropAlert
-        else:
-            return Response({'error': 'Invalid alert type'}, status=400)
-        alert = get_object_or_404(model, id=alert_id, user=request.user)
-        alert.is_notified = True
-        alert.save()
-        return Response({'status': 'success'})
-
-
-
-
 
 class NewArrivalsView(generics.ListAPIView):
     serializer_class = ProductSerializer
@@ -725,6 +622,181 @@ class ProductRecommendationsView(generics.ListAPIView):
                 break
                 
         return unique_recommendations
+
+
+from rest_framework import filters
+
+class CustomPillFilterBackend(filters.BaseFilterBackend):
+    def filter_queryset(self, request, queryset, view):
+        pill_id = request.query_params.get('pill')
+        if pill_id is not None:
+            # First validate that the pill exists
+            if Pill.objects.filter(id=pill_id).exists():
+                return queryset.filter(pill__id=pill_id)
+            else:
+                # Return empty queryset if pill doesn't exist
+                return queryset.none()
+        return queryset
+
+
+class PillItemListCreateView(generics.ListCreateAPIView):
+    queryset = PillItem.objects.select_related(
+        'user', 'product', 'color', 'pill'
+    ).prefetch_related('product__images')
+    serializer_class = AdminPillItemSerializer
+    filter_backends = [CustomPillFilterBackend, OrderingFilter]
+    ordering_fields = ['date_added', 'quantity']
+    ordering = ['-date_added']
+    
+
+class PillItemRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = PillItem.objects.select_related(
+        'user', 'product', 'color', 'pill'
+    )
+    serializer_class = AdminPillItemSerializer
+    lookup_field = 'pk'
+
+    def perform_destroy(self, instance):
+        if instance.pill and instance.pill.status in ['p', 'd']:
+            raise serializers.ValidationError("Cannot delete items from paid/delivered pills")
+        instance.delete()
+
+class LovedProductListCreateView(generics.ListCreateAPIView):
+    queryset = LovedProduct.objects.select_related(
+        'user', 'product'
+    ).prefetch_related('product__images')
+    serializer_class = AdminLovedProductSerializer
+    filter_backends = [DjangoFilterBackend, OrderingFilter]
+    filterset_fields = {
+        'user': ['exact'],
+        'product': ['exact'],
+        'created_at': ['gte', 'lte', 'exact']
+    }
+    ordering_fields = ['created_at']
+    ordering = ['-created_at']
+
+class LovedProductRetrieveDestroyView(generics.RetrieveDestroyAPIView):
+    queryset = LovedProduct.objects.select_related('user', 'product')
+    serializer_class = AdminLovedProductSerializer
+    lookup_field = 'pk'
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+class StockAlertCreateView(generics.CreateAPIView):
+    serializer_class = StockAlertSerializer
+    permission_classes = [AllowAny]
+
+    def create(self, request, *args, **kwargs):
+        product_id = request.data.get('product')
+        email = request.data.get('email')
+        user = request.user if request.user.is_authenticated else None
+        product = get_object_or_404(Product, id=product_id)
+        if product.total_quantity() > 0:
+            return Response(
+                {"error": "Product is already in stock"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        existing_alert = StockAlert.objects.filter(
+            product=product,
+            user=user if user else None,
+            email=email if not user else None
+        ).exists()
+        if existing_alert:
+            return Response(
+                {"error": "You already requested an alert for this product"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save(user=user)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+class PriceDropAlertCreateView(generics.CreateAPIView):
+    serializer_class = PriceDropAlertSerializer
+    permission_classes = [AllowAny]
+
+    def create(self, request, *args, **kwargs):
+        product_id = request.data.get('product')
+        email = request.data.get('email')
+        user = request.user if request.user.is_authenticated else None
+        last_price = request.data.get('last_price')
+        product = get_object_or_404(Product, id=product_id)
+        alert, created = PriceDropAlert.objects.update_or_create(
+            product=product,
+            user=user if user else None,
+            email=email if not user else None,
+            defaults={
+                'last_price': last_price or product.price,
+                'is_notified': False
+            }
+        )
+        status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
+        serializer = self.get_serializer(alert)
+        return Response(serializer.data, status=status_code)
+
+class UserActiveAlertsView(generics.ListAPIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        back_in_stock_alerts = StockAlert.objects.filter(
+            user=request.user,
+            is_notified=False
+        ).select_related('product').annotate(
+            available_quantity=Sum('product__availabilities__quantity')
+        ).filter(
+            available_quantity__gt=0
+        )
+        price_drop_alerts = PriceDropAlert.objects.filter(
+            user=request.user,
+            is_notified=False
+        ).select_related('product').filter(
+            product__price__lt=F('last_price')
+        )
+        back_in_stock_data = []
+        for alert in back_in_stock_alerts:
+            product_data = ProductSerializer(alert.product, context={'request': request}).data
+            back_in_stock_data.append(product_data)
+        price_drop_data = []
+        for alert in price_drop_alerts:
+            alert_data = PriceDropAlertSerializer(alert).data
+            product_data = ProductSerializer(alert.product, context={'request': request}).data
+            alert_data['product_data'] = product_data
+            price_drop_data.append(alert_data)
+        return Response({
+            'back_in_stock_alerts': back_in_stock_data,
+            'price_drop_alerts': price_drop_data
+        })
+
+class MarkAlertAsNotifiedView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, alert_type, alert_id):
+        if alert_type == 'stock':
+            model = StockAlert
+        elif alert_type == 'price':
+            model = PriceDropAlert
+        else:
+            return Response({'error': 'Invalid alert type'}, status=400)
+        alert = get_object_or_404(model, id=alert_id, user=request.user)
+        alert.is_notified = True
+        alert.save()
+        return Response({'status': 'success'})
 
 
 
@@ -1060,62 +1132,6 @@ class BestProductRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView
     serializer_class = BestProductSerializer
     # permission_classes = [IsAdminUser]
 
-from rest_framework import filters
-
-class CustomPillFilterBackend(filters.BaseFilterBackend):
-    def filter_queryset(self, request, queryset, view):
-        pill_id = request.query_params.get('pill')
-        if pill_id is not None:
-            # First validate that the pill exists
-            if Pill.objects.filter(id=pill_id).exists():
-                return queryset.filter(pill__id=pill_id)
-            else:
-                # Return empty queryset if pill doesn't exist
-                return queryset.none()
-        return queryset
-
-
-class PillItemListCreateView(generics.ListCreateAPIView):
-    queryset = PillItem.objects.select_related(
-        'user', 'product', 'color', 'pill'
-    ).prefetch_related('product__images')
-    serializer_class = AdminPillItemSerializer
-    filter_backends = [CustomPillFilterBackend, OrderingFilter]
-    ordering_fields = ['date_added', 'quantity']
-    ordering = ['-date_added']
-    
-
-class PillItemRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = PillItem.objects.select_related(
-        'user', 'product', 'color', 'pill'
-    )
-    serializer_class = AdminPillItemSerializer
-    lookup_field = 'pk'
-
-    def perform_destroy(self, instance):
-        if instance.pill and instance.pill.status in ['p', 'd']:
-            raise serializers.ValidationError("Cannot delete items from paid/delivered pills")
-        instance.delete()
-
-class LovedProductListCreateView(generics.ListCreateAPIView):
-    queryset = LovedProduct.objects.select_related(
-        'user', 'product'
-    ).prefetch_related('product__images')
-    serializer_class = AdminLovedProductSerializer
-    filter_backends = [DjangoFilterBackend, OrderingFilter]
-    filterset_fields = {
-        'user': ['exact'],
-        'product': ['exact'],
-        'created_at': ['gte', 'lte', 'exact']
-    }
-    ordering_fields = ['created_at']
-    ordering = ['-created_at']
-
-class LovedProductRetrieveDestroyView(generics.RetrieveDestroyAPIView):
-    queryset = LovedProduct.objects.select_related('user', 'product')
-    serializer_class = AdminLovedProductSerializer
-    lookup_field = 'pk'
-
 class PillListCreateView(generics.ListCreateAPIView):
     queryset = Pill.objects.all()
     serializer_class = PillCreateSerializer
@@ -1311,5 +1327,11 @@ class ApplyPayRequestView(APIView):
             pill.status = 'p'
             pill.save()
         return Response({"status": "Pay request applied successfully"}, status=status.HTTP_200_OK)
+
+
+
+
+
+
 
 
