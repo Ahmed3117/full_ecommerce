@@ -76,12 +76,6 @@ def generate_pill_number():
         pill_number = ''.join(random.choices(string.digits, k=20))
         if not Pill.objects.filter(pill_number=pill_number).exists():
             return pill_number
-def generate_product_number():
-    """Generate a unique 20-digit pill number."""
-    while True:
-        product_number = ''.join(random.choices(string.digits, k=20))
-        if not Product.objects.filter(product_number=product_number).exists():
-            return product_number
 
 def create_random_coupon():
     letters = string.ascii_lowercase
@@ -287,9 +281,15 @@ class Product(models.Model):
         return self.name
 
     def save(self, *args, **kwargs):
-        if not self.product_number:
-            self.product_number = generate_product_number()
+        # Save first to get the ID if this is a new product
+        is_new = not self.pk
         super().save(*args, **kwargs)
+        
+        # Generate product_number after saving to ensure we have an ID
+        if is_new and not self.product_number:
+            self.product_number = f"Bookefy-{self.id}"
+            # Update only the product_number field to avoid infinite recursion
+            Product.objects.filter(pk=self.pk).update(product_number=self.product_number)
 
     class Meta:
         ordering = ['-date_added']
@@ -965,6 +965,29 @@ class LovedProduct(models.Model):
 
     def __str__(self):
         return f"{self.product.name} loved by {self.user.username if self.user else 'anonymous'}"
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 class StockAlert(models.Model):
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
