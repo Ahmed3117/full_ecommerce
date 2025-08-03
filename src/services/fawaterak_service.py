@@ -92,10 +92,9 @@ class FawaterakPaymentService:
             }
             
             webhook_url= settings.FAWATERAK_WEBHOOK_URL
-            success_url = f"{settings.SUCCESS_URL}?pill_number={pill.pill_number}&payment_status=success&amount={cart_total}"
-            pending_url = f"{settings.PENDING_URL}?pill_number={pill.pill_number}&payment_status=pending&amount={cart_total}"
-            fail_url = f"{settings.FAIL_URL}?pill_number={pill.pill_number}&payment_status=failed&amount={cart_total}"
-            
+            success_url = f"{settings.PILL_STATUS_URL}/{pill.id}/success?pill_number={pill.pill_number}&amount={cart_total}"
+            pending_url = f"{settings.PILL_STATUS_URL}/{pill.id}/pending?pill_number={pill.pill_number}&amount={cart_total}"
+            fail_url = f"{settings.PILL_STATUS_URL}/{pill.id}/failed?pill_number={pill.pill_number}&amount={cart_total}"
             payload = {
                 "cartTotal": str(round(cart_total, 2)),
                 "currency": "EGP",
