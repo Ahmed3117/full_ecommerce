@@ -144,10 +144,12 @@ class PillStatusLogInline(admin.TabularInline):
     
 @admin.register(Pill)
 class PillAdmin(admin.ModelAdmin):
-    list_display = ['pill_number', 'user', 'status', 'is_shipped', 'khazenly_status']
-    list_filter = ['status', 'paid']  
+    list_display = ['pill_number', 'user','paid', 'status', 'is_shipped', 'khazenly_status', 'khazenly_actions']
+    list_filter = ['status', 'paid', 'is_shipped']  
     search_fields = ['pill_number', 'user__username']
     readonly_fields = ['pill_number']
+    list_editable = ['paid', 'status']
+    actions = ['send_to_khazenly_bulk']
     
     def khazenly_status(self, obj):
         if obj.has_khazenly_order:
@@ -157,6 +159,128 @@ class PillAdmin(admin.ModelAdmin):
         else:
             return format_html('<span style="color: gray;">-</span>')
     khazenly_status.short_description = 'Khazenly'
+    
+    @admin.display(description='Khazenly Actions')
+    def khazenly_actions(self, obj):
+        """Add manual Khazenly action button for each row"""
+        if obj.has_khazenly_order:
+            # Already has Khazenly order - show success status with order number
+            return format_html(
+                '<span style="color: green; padding: 3px 8px; font-weight: bold; background: #d4edda; border-radius: 3px;">✓ Sent ({0})</span>',
+                obj.khazenly_sales_order_number or 'Created'
+            )
+        elif obj.paid:
+            # Paid but no Khazenly order - show clickable send button
+            return format_html(
+                '<a href="/admin/products/pill/{}/send_to_khazenly/" '
+                'class="button" '
+                'style="background: #28a745; color: white; padding: 6px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; font-weight: bold; display: inline-block; border: none; cursor: pointer;" '
+                'onclick="return confirm(\'Are you sure you want to send Pill {} to Khazenly?\');">'
+                '🚀 Send to Khazenly</a>',
+                obj.id,
+                obj.pill_number
+            )
+        else:
+            # Not paid - show why it can't be sent
+            return format_html(
+                '<span style="color: #6c757d; padding: 3px 8px; font-style: italic; background: #f8f9fa; border-radius: 3px;">💸 Not Paid</span>'
+            )
+    
+    
+    khazenly_actions.short_description = 'Khazenly Actions'
+    khazenly_actions.admin_order_field = None
+    khazenly_actions.allow_tags = True
+    
+    @admin.action(description='Send selected pills to Khazenly (paid pills only)')
+    def send_to_khazenly_bulk(self, request, queryset):
+        """Bulk action to send multiple pills to Khazenly"""
+        success_count = 0
+        error_count = 0
+        
+        # Filter only paid pills that don't have Khazenly orders
+        eligible_pills = queryset.filter(paid=True, khazenly_data__isnull=True)
+        
+        for pill in eligible_pills:
+            try:
+                pill._create_khazenly_order()
+                # Refresh to check if it was successful
+                pill.refresh_from_db()
+                if pill.has_khazenly_order:
+                    success_count += 1
+                else:
+                    error_count += 1
+            except Exception as e:
+                error_count += 1
+                
+        if success_count > 0:
+            self.message_user(
+                request, 
+                f'Successfully sent {success_count} pills to Khazenly.',
+                level='SUCCESS'
+            )
+        if error_count > 0:
+            self.message_user(
+                request,
+                f'Failed to send {error_count} pills to Khazenly. Check logs for details.',
+                level='ERROR'
+            )
+    
+    def get_urls(self):
+        """Add custom URL for individual Khazenly send action"""
+        from django.urls import path
+        urls = super().get_urls()
+        custom_urls = [
+            path(
+                '<int:pill_id>/send_to_khazenly/',
+                self.admin_site.admin_view(self.send_to_khazenly_view),
+                name='pill_send_to_khazenly',
+            ),
+        ]
+        return custom_urls + urls
+    
+    def send_to_khazenly_view(self, request, pill_id):
+        """Handle manual send to Khazenly for individual pill"""
+        from django.shortcuts import get_object_or_404, redirect
+        from django.contrib import messages
+        
+        pill = get_object_or_404(Pill, id=pill_id)
+        
+        # Check if pill is eligible
+        if not pill.paid:
+            messages.error(request, f'❌ Pill {pill.pill_number} is not paid yet.')
+            return redirect('admin:products_pill_changelist')
+            
+        if pill.has_khazenly_order:
+            messages.warning(request, f'⚠️ Pill {pill.pill_number} already has a Khazenly order: {pill.khazenly_sales_order_number}')
+            return redirect('admin:products_pill_changelist')
+        
+        try:
+            # Manually trigger Khazenly order creation
+            pill._create_khazenly_order()
+            
+            # Refresh pill from database to get updated data
+            pill.refresh_from_db()
+            
+            if pill.has_khazenly_order:
+                messages.success(
+                    request, 
+                    f'✅ Successfully sent Pill {pill.pill_number} to Khazenly! '
+                    f'Sales Order Number: {pill.khazenly_sales_order_number}'
+                )
+            else:
+                messages.error(
+                    request,
+                    f'❌ Failed to send Pill {pill.pill_number} to Khazenly. Check logs for details.'
+                )
+                
+        except Exception as e:
+            messages.error(
+                request,
+                f'❌ Error sending Pill {pill.pill_number} to Khazenly: {str(e)}'
+            )
+        
+        return redirect('admin:products_pill_changelist')
+    
 
 @admin.register(Discount)
 class DiscountAdmin(admin.ModelAdmin):

@@ -112,7 +112,7 @@ class KhazenlyService:
             timestamp_suffix = int(timezone.now().timestamp())
             unique_order_id = f"{pill.pill_number}-{timestamp_suffix}"
             
-            # Prepare line items with logical product data
+            # Prepare line items with logical product data including color and size
             line_items = []
             total_product_price = 0
             
@@ -124,10 +124,29 @@ class KhazenlyService:
                 
                 total_product_price += discounted_price * item.quantity
                 
+                # Build detailed item description with color and size
+                item_description = product.name
+                description_parts = []
+                
+                # Add size if available
+                if item.size:
+                    description_parts.append(f"Size: {item.size}")
+                
+                # Add color if available
+                if item.color:
+                    description_parts.append(f"Color: {item.color.name}")
+                
+                # Combine description parts
+                if description_parts:
+                    item_description += f" ({', '.join(description_parts)})"
+                
+                # Ensure description doesn't exceed reasonable length (Khazenly might have limits)
+                item_description = item_description[:150]  # Limit to 150 characters
+                
                 # Use logical product data for line items
                 line_items.append({
                     "sku": product.product_number if product.product_number else f"PROD-{product.id}",  # Use product number as SKU
-                    "itemName": product.name,  # Use actual product name
+                    "itemName": item_description,  # Use detailed product description with color/size
                     "price": discounted_price,  # Use discounted price
                     "quantity": item.quantity,  # Item quantity
                     "discountAmount": item_discount,  # Actual discount on the product

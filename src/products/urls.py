@@ -51,7 +51,10 @@ urlpatterns = [
     path('spin-wheel/history/', views.SpinWheelHistoryView.as_view(), name='spin-wheel-history'),
     path('spin-wheel-coupons/', views.UserSpinWheelCouponsView.as_view(), name='user-spin-wheel-coupons'),
     path('products/<int:product_id>/availabilities/', views.ProductAvailabilitiesView.as_view(), name='product-availabilities'),
-
+    # this endpoint for khazenly to get product availabilities with total
+    path('products/<str:product_number>/availabilities-with-total/', 
+     views.ProductAvailabilitiesWithTotalView.as_view(), 
+     name='product-availabilities-with-total'),
     # Admin Endpoints
     path('dashboard/categories/', views.CategoryListCreateView.as_view(), name='admin-category-list-create'),
     path('dashboard/categories/<int:pk>/', views.CategoryRetrieveUpdateDestroyView.as_view(), name='admin-category-detail'),
