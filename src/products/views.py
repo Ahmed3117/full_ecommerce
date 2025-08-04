@@ -494,6 +494,39 @@ class ProductAvailabilitiesView(generics.ListAPIView):
         return ProductAvailability.objects.filter(product_id=product_id)
 
 
+class ProductAvailabilitiesWithTotalView(generics.ListAPIView):
+    serializer_class = ProductAvailabilityBreifedSerializer 
+    permission_classes = [AllowAny]
+
+    def get_queryset(self):
+        product_number = self.kwargs['product_number']
+        return ProductAvailability.objects.filter(product__product_number=product_number)
+        # Note: using product__product_number to follow the foreign key relationship
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        
+        # Early return if product doesn't exist
+        if not queryset.exists():
+            return Response(
+                {"error": "Product with this number does not exist"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+            
+        serializer = self.get_serializer(queryset, many=True)
+        total = sum(item.quantity for item in queryset)
+        
+        response_data = {
+            'count': queryset.count(),
+            'next': None,
+            'previous': None,
+            'results': serializer.data,
+            'total_available_quantity': total,
+            'sku': self.kwargs['product_number']  
+        }
+        
+        return Response(response_data)
+
 class NewArrivalsView(generics.ListAPIView):
     serializer_class = ProductSerializer
     filter_backends = [DjangoFilterBackend]

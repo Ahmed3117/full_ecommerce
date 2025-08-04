@@ -118,6 +118,7 @@ class ProductAvailabilityBreifedSerializer(serializers.Serializer):
 
     def get_is_low_stock(self, obj):
         return obj.product.is_low_stock()
+    
 
 class RatingSerializer(serializers.ModelSerializer):
     class Meta:
