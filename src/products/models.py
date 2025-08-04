@@ -507,10 +507,11 @@ class Pill(models.Model):
     khazenly_order_number = models.CharField(max_length=100, null=True, blank=True, help_text="Order number sent to Khazenly")
     khazenly_created_at = models.DateTimeField(null=True, blank=True, help_text="When the Khazenly order was created")
     
-    # Fawaterak fields
-    fawaterak_invoice_key = models.CharField(max_length=100, null=True, blank=True)
-    fawaterak_data = models.JSONField(null=True, blank=True)
-    invoice_id = models.CharField(max_length=100, null=True, blank=True, help_text="Fawaterak invoice ID")  
+    # Shake-out fields (replacing Fawaterak)
+    shakeout_invoice_id = models.CharField(max_length=100, null=True, blank=True, help_text="Shake-out invoice ID")
+    shakeout_invoice_ref = models.CharField(max_length=100, null=True, blank=True, help_text="Shake-out invoice reference")
+    shakeout_data = models.JSONField(null=True, blank=True, help_text="Shake-out invoice response data")
+    shakeout_created_at = models.DateTimeField(null=True, blank=True, help_text="When the Shake-out invoice was created")
     
     def save(self, *args, **kwargs):
         if not self.pill_number:
@@ -697,6 +698,83 @@ class Pill(models.Model):
         if self.paid:
             return "Paid"
         return "Pending"
+
+    def create_shakeout_invoice(self):
+        """Create a Shake-out invoice for this pill"""
+        from services.shakeout_service import shakeout_service
+        
+        result = shakeout_service.create_payment_invoice(self)
+        
+        if result['success']:
+            data = result['data']
+            self.shakeout_invoice_id = data.get('invoice_id')
+            self.shakeout_invoice_ref = data.get('invoice_ref')
+            self.shakeout_data = data
+            self.shakeout_created_at = timezone.now()
+            self.save(update_fields=['shakeout_invoice_id', 'shakeout_invoice_ref', 'shakeout_data', 'shakeout_created_at'])
+            # Fix: Use 'url' instead of 'payment_url' to match Shake-out API response
+            return data.get('url')
+        return None
+
+    def check_shakeout_payment(self):
+        """Check payment status with Shake-out"""
+        if not self.shakeout_invoice_id:
+            return None, "No Shake-out invoice associated"
+            
+        from services.shakeout_service import shakeout_service
+        
+        payment_data = shakeout_service.check_payment_status(self.shakeout_invoice_id)
+        
+        if payment_data['success']:
+            # Payment status updates will come via webhooks
+            return payment_data, None
+        return None, payment_data.get('error')
+
+    @property
+    def shakeout_payment_url(self):
+        """Get Shake-out payment URL if exists"""
+        if self.shakeout_data:
+            # Fix: Use 'url' instead of 'payment_url' to match Shake-out API response
+            return self.shakeout_data.get('url')
+        return None
+
+    @property
+    def shakeout_payment_status(self):
+        """Get Shake-out payment status"""
+        if not self.shakeout_invoice_id:
+            return "No invoice"
+        if self.paid:
+            return "Paid"
+        return "Pending"
+
+    def is_shakeout_invoice_expired(self):
+        """
+        Check if the current Shake-out invoice is expired or invalid
+        """
+        from datetime import timedelta
+        
+        if not self.shakeout_invoice_id or not self.shakeout_created_at:
+            return True  # No invoice or creation date means we can create a new one
+        
+        # Check if invoice is older than 30 days (Shake-out default expiry)
+        expiry_days = 30
+        expiry_date = self.shakeout_created_at + timedelta(days=expiry_days)
+        
+        if timezone.now() > expiry_date:
+            logger.info(f"Shake-out invoice {self.shakeout_invoice_id} for pill {self.pill_number} expired on {expiry_date}")
+            return True
+        
+        # Check if invoice status indicates it's no longer valid
+        if self.shakeout_data:
+            # Check webhook history for failure/expiry status
+            webhooks = self.shakeout_data.get('webhooks', [])
+            for webhook in reversed(webhooks):  # Check most recent first
+                webhook_status = webhook.get('invoice_status', '').lower()
+                if webhook_status in ['expired', 'cancelled', 'failed']:
+                    logger.info(f"Shake-out invoice {self.shakeout_invoice_id} for pill {self.pill_number} has status: {webhook_status}")
+                    return True
+        
+        return False
 
     def _update_pill_item_prices(self, item):
         """Helper method to update prices and sale date on a pill item"""

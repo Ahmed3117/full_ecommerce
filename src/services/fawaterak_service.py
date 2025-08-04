@@ -8,25 +8,37 @@ logger = logging.getLogger(__name__)
 
 class FawaterakPaymentService:
     def __init__(self):
-        self.api_key = settings.FAWATERAK_API_KEY
-        self.provider_key = settings.FAWATERAK_PROVIDER_KEY
-        self.base_url = settings.FAWATERAK_BASE_URL 
-        self.webhook_url = settings.FAWATERAK_WEBHOOK_URL
+        # Use getattr with fallback values to handle missing Fawaterak settings gracefully
+        self.api_key = getattr(settings, 'FAWATERAK_API_KEY', None)
+        self.provider_key = getattr(settings, 'FAWATERAK_PROVIDER_KEY', None)
+        self.base_url = getattr(settings, 'FAWATERAK_BASE_URL', 'https://app.fawaterk.com/api/v2')
+        self.webhook_url = getattr(settings, 'FAWATERAK_WEBHOOK_URL', None)
         
-        # Correct API endpoints
-        self.create_invoice_url = f"{self.base_url}/createInvoiceLink"
-        # Try different endpoint names for getting invoice status
-        self.invoice_status_urls = [
-            f"{self.base_url}/getInvoiceData",
-            f"{self.base_url}/invoiceStatus", 
-            f"{self.base_url}/checkInvoice",
-            f"{self.base_url}/invoice/status"
-        ]
+        # If Fawaterak is not configured, log a warning
+        if not self.api_key:
+            logger.warning("Fawaterak service not configured - API key missing. Shake-out is now the primary payment gateway.")
+        
+        # Correct API endpoints (only if base_url exists)
+        if self.base_url:
+            self.create_invoice_url = f"{self.base_url}/createInvoiceLink"
+            # Try different endpoint names for getting invoice status
+            self.invoice_status_urls = [
+                f"{self.base_url}/getInvoiceData",
+                f"{self.base_url}/invoiceStatus", 
+                f"{self.base_url}/checkInvoice",
+                f"{self.base_url}/invoice/status"
+            ]
         
     def create_payment_invoice(self, pill):
         """
         Create a payment invoice for a pill using Fawaterak Production API
         """
+        if not self.api_key:
+            return {
+                'success': False, 
+                'error': 'Fawaterak service not configured. Please use Shake-out payment gateway instead.'
+            }
+            
         try:
             logger.info(f"Creating Fawaterak invoice for pill {pill.pill_number}")
             
@@ -193,6 +205,12 @@ class FawaterakPaymentService:
         """
         Get invoice status by reference ID - try multiple endpoints
         """
+        if not self.api_key:
+            return {
+                'success': False, 
+                'error': 'Fawaterak service not configured. Please use Shake-out payment gateway instead.'
+            }
+            
         try:
             headers = {
                 'Authorization': f'Bearer {self.api_key}',

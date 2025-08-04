@@ -14,6 +14,7 @@ import logging
 
 from products.models import Pill
 from services.fawaterak_service import fawaterak_service
+from services.shakeout_service import shakeout_service  # Add Shake-out service import
 
 logger = logging.getLogger(__name__)
 
@@ -327,9 +328,98 @@ class PaymentPendingView(APIView):
             frontend_url = f"https://bookefay.com?pill_number={pill_number}&payment_status=error"
             return redirect(frontend_url)
 
+class CreateShakeoutInvoiceView(APIView):
+    authentication_classes = [CustomJWTAuthentication]
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request, pill_id):
+        """Create a Shake-out invoice for a pill"""
+        try:
+            logger.info(f"Starting Shake-out invoice creation for pill {pill_id}, user: {request.user}")
+            
+            pill = get_object_or_404(Pill, id=pill_id, user=request.user)
+            logger.info(f"Pill found: {pill.pill_number}")
+            
+            # Check if pill already has a Shake-out invoice
+            if pill.shakeout_invoice_id:
+                # Check if the existing invoice is expired or invalid
+                if pill.is_shakeout_invoice_expired():
+                    logger.info(f"Existing Shake-out invoice {pill.shakeout_invoice_id} for pill {pill_id} is expired/invalid - creating new one")
+                    
+                    # Clear old invoice data to create a new one
+                    pill.shakeout_invoice_id = None
+                    pill.shakeout_invoice_ref = None
+                    pill.shakeout_data = None
+                    pill.shakeout_created_at = None
+                    pill.save(update_fields=['shakeout_invoice_id', 'shakeout_invoice_ref', 'shakeout_data', 'shakeout_created_at'])
+                else:
+                    logger.warning(f"Pill {pill_id} already has active Shake-out invoice: {pill.shakeout_invoice_id}")
+                    return Response({
+                        'success': False,
+                        'error': 'Pill already has a Shake-out invoice',
+                        'data': {
+                            'invoice_id': pill.shakeout_invoice_id,
+                            'invoice_ref': pill.shakeout_invoice_ref,
+                            'payment_url': pill.shakeout_payment_url,
+                            'created_at': pill.shakeout_created_at.isoformat() if pill.shakeout_created_at else None,
+                            'status': 'active'
+                        }
+                    }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Check if pill has required data
+            if not hasattr(pill, 'pilladdress'):
+                logger.error(f"Pill {pill_id} missing pilladdress")
+                return Response({
+                    'success': False,
+                    'error': 'Please complete your address information first',
+                    'pill_number': pill.pill_number,
+                    'status': 'missing_address'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            logger.info(f"Pill address found: {pill.pilladdress.name}, phone: {pill.pilladdress.phone}")
+            
+            # Create Shake-out invoice
+            logger.info(f"Calling pill.create_shakeout_invoice() for pill {pill_id}")
+            payment_url = pill.create_shakeout_invoice()
+            logger.info(f"create_shakeout_invoice returned: {payment_url}")
+            
+            if payment_url:
+                # Refresh pill from database to get updated data
+                pill.refresh_from_db()
+                
+                logger.info(f"Successfully created Shake-out invoice for pill {pill_id}")
+                return Response({
+                    'success': True,
+                    'message': 'Shake-out invoice created successfully',
+                    'data': {
+                        'invoice_id': pill.shakeout_invoice_id,
+                        'invoice_ref': pill.shakeout_invoice_ref,
+                        'payment_url': payment_url,
+                        'total_amount': pill.final_price(),
+                        'pill_number': pill.pill_number,
+                        'currency': 'EGP'
+                    }
+                }, status=status.HTTP_201_CREATED)
+            else:
+                logger.error(f"create_shakeout_invoice returned None for pill {pill_id}")
+                return Response({
+                    'success': False,
+                    'error': 'Failed to create Shake-out invoice - check service logs'
+                }, status=status.HTTP_400_BAD_REQUEST)
+                
+        except Exception as e:
+            logger.error(f"Exception creating Shake-out invoice for pill {pill_id}: {str(e)}")
+            logger.error(f"Exception type: {type(e)}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return Response({
+                'success': False,
+                'error': f'Server error: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 # Instantiate the views
 create_payment_view = CreatePaymentView.as_view()
+create_shakeout_invoice_view = CreateShakeoutInvoiceView.as_view()  # Add Shake-out view
 payment_success_view = PaymentSuccessView.as_view()
 payment_failed_view = PaymentFailedView.as_view()
 payment_pending_view = PaymentPendingView.as_view()

@@ -3,10 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Fawaterak Payment Demo - BOOKIFAY</title>
-    <!-- Keep all existing styles -->
+    <title>Shake-out Payment Demo - BOOKIFAY</title>
     <style>
-        /* Keep all your existing styles here */
         * {
             margin: 0;
             padding: 0;
@@ -30,7 +28,7 @@
         }
 
         .header {
-            background: linear-gradient(45deg, #667eea, #764ba2);
+            background: linear-gradient(45deg, #28a745, #20c997);
             color: white;
             padding: 30px;
             text-align: center;
@@ -49,8 +47,8 @@
         }
 
         .section.active {
-            border-color: #667eea;
-            background: #f8f9ff;
+            border-color: #28a745;
+            background: #f8fff9;
         }
 
         .section h3 {
@@ -61,7 +59,7 @@
         }
 
         .step-number {
-            background: #667eea;
+            background: #28a745;
             color: white;
             width: 30px;
             height: 30px;
@@ -74,11 +72,11 @@
         }
 
         .step-number.completed {
-            background: #28a745;
+            background: #20c997;
         }
 
         .btn {
-            background: #667eea;
+            background: #28a745;
             color: white;
             border: none;
             padding: 12px 25px;
@@ -90,7 +88,7 @@
         }
 
         .btn:hover {
-            background: #5a6fd8;
+            background: #218838;
             transform: translateY(-2px);
         }
 
@@ -101,7 +99,7 @@
         }
 
         .btn.success {
-            background: #28a745;
+            background: #20c997;
         }
 
         .btn.danger {
@@ -144,7 +142,7 @@
             width: 20px;
             height: 20px;
             border: 3px solid #f3f3f3;
-            border-top: 3px solid #667eea;
+            border-top: 3px solid #28a745;
             border-radius: 50%;
             animation: spin 1s linear infinite;
             margin-right: 10px;
@@ -241,8 +239,9 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>Fawaterak Payment Demo</h1>
-            <p>Testing integration with Fawaterak payment gateway</p>
+            <h1>🚀 Shake-out Payment Demo</h1>
+            <p>Testing integration with Shake-out payment gateway</p>
+            <small>Webhook URL: https://api2.bookefay.com/api/webhook/shakeout/</small>
         </div>
         <div class="content">
             <!-- Step 1: Load Pill Data -->
@@ -264,25 +263,27 @@
                 </div>
             </div>
 
-            <!-- Step 2: Create Payment Invoice -->
+            <!-- Step 2: Create Shake-out Invoice -->
             <div class="section" id="step2">
                 <h3>
                     <span class="step-number" id="step2-num">2</span>
-                    Create Payment Invoice
+                    Create Shake-out Invoice
                 </h3>
-                <p>Create a payment invoice for the pill through the Fawaterak API.</p>
-                <button class="btn" onclick="createPaymentInvoice()" id="create-payment-btn" disabled>
+                <p>Create a payment invoice for the pill using the Shake-out payment service.</p>
+                <button class="btn" onclick="createShakeoutInvoice()" id="create-payment-btn" disabled>
                     <span id="create-loading" class="loading" style="display: none;"></span>
-                    Create Payment Invoice
+                    Create Shake-out Invoice
                 </button>
-                <button class="btn warning" onclick="openPaymentUrl()" id="open-payment-btn" disabled>
+                <button class="btn success" onclick="openPaymentUrl()" id="open-payment-btn" disabled>
                     Open Payment Page
                 </button>
-                <button class="btn info" onclick="simulatePayment()" id="simulate-payment-btn" disabled>
-                    Show Test Card
-                </button>
                 <div id="payment-invoice-data" style="display: none;">
-                    <h4>Payment Invoice</h4>
+                    <h4>Shake-out Invoice Created</h4>
+                    <div class="success-box">
+                        <p><strong>Invoice ID:</strong> <span id="invoice-id"></span></p>
+                        <p><strong>Invoice Reference:</strong> <span id="invoice-ref"></span></p>
+                        <p><strong>Total Amount:</strong> <span id="invoice-amount"></span> EGP</p>
+                    </div>
                     <p>Payment URL:</p>
                     <div class="payment-url" id="payment-url"></div>
                 </div>
@@ -294,16 +295,16 @@
                     <span class="step-number" id="step3-num">3</span>
                     Payment Status Monitoring
                 </h3>
-                <p>Check the payment status either manually or through automatic polling.</p>
+                <p>Check the payment status and monitor for webhook updates from Shake-out.</p>
                 <button class="btn" onclick="checkPaymentStatus()" id="check-status-btn" disabled>
                     <span id="status-loading" class="loading" style="display: none;"></span>
                     Check Payment Status
                 </button>
-                <button class="btn success" onclick="startStatusPolling()" id="start-polling-btn" disabled>
-                    Start Auto Polling
+                <button class="btn success" onclick="simulateWebhook('paid')" id="webhook-success-btn" disabled>
+                    Simulate Paid Webhook
                 </button>
-                <button class="btn danger" onclick="stopStatusPolling()" id="stop-polling-btn" disabled>
-                    Stop Auto Polling
+                <button class="btn danger" onclick="simulateWebhook('failed')" id="webhook-failed-btn" disabled>
+                    Simulate Failed Webhook
                 </button>
                 <div id="payment-status-data" style="display: none;">
                     <div class="info-box" id="status-box">
@@ -312,54 +313,24 @@
                 </div>
             </div>
 
-            <!-- Step 4: Webhook Simulation -->
-            <div class="section" id="step4">
-                <h3>
-                    <span class="step-number" id="step4-num">4</span>
-                    Webhook Simulation
-                </h3>
-                <p>Simulate webhook notifications from Fawaterak to your server.</p>
-                <button class="btn success" onclick="simulateSuccessWebhook()" id="webhook-success-btn" disabled>
-                    Simulate Success Webhook
-                </button>
-                <button class="btn danger" onclick="simulateFailedWebhook()" id="webhook-failed-btn" disabled>
-                    Simulate Failed Webhook
-                </button>
-            </div>
-
-            <!-- Step 5: Final Verification -->
-            <div class="section" id="step5">
-                <h3>
-                    <span class="step-number" id="step5-num">5</span>
-                    Final Verification
-                </h3>
-                <p>Verify the final status of the pill after payment processing.</p>
-                <button class="btn" onclick="verifyFinalStatus()" id="verify-btn" disabled>
-                    Verify Final Status
-                </button>
-                <div id="final-verification" style="display: none;"></div>
-            </div>
-
             <!-- Logs Container -->
             <div id="logs" class="logs"></div>
         </div>
     </div>
 
     <script>
-        // FIXED Configuration with proper JWT token and valid pill ID
+        // Configuration for Shake-out testing - FIXED with valid pill ID
         const CONFIG = {
-            baseUrl: 'http://127.0.0.1:8000',
-            jwtToken: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzU0NjAzMDQ4LCJpYXQiOjE3NTQzNDM4NDgsImp0aSI6IjhhYTJkNjBjZGEwMTQ5ZThhZWUwNGY5OGZmNzkzNTJlIiwidXNlcl9pZCI6MX0.Na6rwmqH_z8hkrHER7xId7gxp-T-DiRG8vlAsgCjdCg',
-            pillId: 30,  // Valid pill ID that belongs to the admin user
-            pillNumber: '92669214257708369311'  // Matching pill number
+            baseUrl: 'http://127.0.0.1:8000',  // Fixed: Use correct Django port
+            jwtToken: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzU0NjAzMDQ4LCJpYXQiOjE3NTQzNDM4NDgsImp0aSI6IjhhYTJkNjBjZGEwMTQ5ZThhZWUwNGY5OGZmNzkzNTJlIiwidXNlcl9pZCI6MX0.Na6rwmqH_z8hkrHER7xId7gxp-T-DiRG8vlAsgCjdCg',  // Fresh JWT token
+            pillId: 32,  // Valid pill ID that belongs to the admin user
+            pillNumber: '18550971531093727412'  // Matching pill number
         };
 
         // Global state
         let pillData = null;
-        let paymentData = null;
-        let pollingInterval = null;
+        let shakeoutData = null;
 
-        // FIXED: Use 'auth' header as configured in Django settings
         function getAuthHeaders() {
             return {
                 'Content-Type': 'application/json',
@@ -376,10 +347,6 @@
             const logsContainer = document.getElementById('logs');
             logsContainer.appendChild(logEntry);
             logsContainer.scrollTop = logsContainer.scrollHeight;
-        }
-
-        function clearLogs() {
-            document.getElementById('logs').innerHTML = '';
         }
 
         function showLoading(elementId, show = true) {
@@ -414,14 +381,13 @@
 
                 pillData = await response.json();
                 log(`✓ Pill data loaded successfully`, 'success');
+                log(`Items: ${pillData.items?.length || 0}, Amount: ${pillData.final_price} EGP`, 'info');
 
                 // Display pill data
                 displayPillData(pillData);
 
                 // Enable next step
                 document.getElementById('create-payment-btn').disabled = false;
-                document.getElementById('open-payment-btn').disabled = false;
-                document.getElementById('simulate-payment-btn').disabled = false;
                 setStepCompleted(1);
                 activateStep(2);
 
@@ -460,43 +426,43 @@
                     <div class="detail-value">${data.items?.length || 0} items</div>
                 </div>
                 <div class="detail-item">
-                    <div class="detail-label">Date Created</div>
-                    <div class="detail-value">${new Date(data.date_added).toLocaleDateString()}</div>
+                    <div class="detail-label">Shake-out Status</div>
+                    <div class="detail-value">${data.shakeout_payment_status || 'No invoice'}</div>
                 </div>
             `;
             document.getElementById('pill-data').style.display = 'block';
         }
 
-        // FIXED: Step 2: Create Payment Invoice
-        async function createPaymentInvoice() {
+        // Step 2: Create Shake-out Invoice
+        async function createShakeoutInvoice() {
             showLoading('create-loading', true);
-            log('Creating payment invoice...', 'info');
+            log('Creating Shake-out invoice...', 'info');
 
             try {
-                const response = await fetch(`${CONFIG.baseUrl}/api/payment/create/${CONFIG.pillId}/`, {
+                // Call the pill's create_shakeout_invoice method
+                const response = await fetch(`${CONFIG.baseUrl}/pills/${CONFIG.pillId}/create-shakeout-invoice/`, {
                     method: 'POST',
                     headers: getAuthHeaders()
                 });
 
-                if (!response.ok) {
-                    const errorText = await response.text();
-                    throw new Error(`HTTP ${response.status}: ${errorText}`);
-                }
-
                 const result = await response.json();
 
-                if (result.success) {
-                    paymentData = result.data;
-                    log(`✓ Payment invoice created: ${paymentData.invoice_id}`, 'success');
-                    log(`Payment URL: ${paymentData.payment_url}`, 'info');
+                if (response.ok && result.success) {
+                    shakeoutData = result.data;
+                    log(`✓ Shake-out invoice created successfully`, 'success');
+                    log(`Invoice ID: ${shakeoutData.invoice_id}`, 'info');
+                    log(`Payment URL: ${shakeoutData.payment_url}`, 'info');
 
-                    // Display payment data
-                    document.getElementById('payment-url').textContent = paymentData.payment_url;
+                    // Display invoice data
+                    document.getElementById('invoice-id').textContent = shakeoutData.invoice_id;
+                    document.getElementById('invoice-ref').textContent = shakeoutData.invoice_ref;
+                    document.getElementById('invoice-amount').textContent = shakeoutData.total_amount;
+                    document.getElementById('payment-url').textContent = shakeoutData.payment_url;
                     document.getElementById('payment-invoice-data').style.display = 'block';
 
                     // Enable next steps
+                    document.getElementById('open-payment-btn').disabled = false;
                     document.getElementById('check-status-btn').disabled = false;
-                    document.getElementById('start-polling-btn').disabled = false;
                     document.getElementById('webhook-success-btn').disabled = false;
                     document.getElementById('webhook-failed-btn').disabled = false;
 
@@ -504,34 +470,25 @@
                     activateStep(3);
 
                 } else {
-                    throw new Error(result.error || 'Failed to create payment invoice');
+                    throw new Error(result.error || result.message || 'Failed to create Shake-out invoice');
                 }
 
             } catch (error) {
-                log(`✗ Error creating payment invoice: ${error.message}`, 'error');
-                showErrorBox('step2', `Failed to create payment invoice: ${error.message}`);
+                log(`✗ Error creating Shake-out invoice: ${error.message}`, 'error');
+                showErrorBox('step2', `Failed to create Shake-out invoice: ${error.message}`);
             } finally {
                 showLoading('create-loading', false);
             }
         }
 
         function openPaymentUrl() {
-            if (paymentData?.payment_url) {
-                window.open(paymentData.payment_url, '_blank');
-                log('Opened payment URL in new tab', 'info');
+            if (shakeoutData?.payment_url) {
+                window.open(shakeoutData.payment_url, '_blank');
+                log('📱 Opened Shake-out payment URL in new tab', 'info');
+                log('💳 Complete the payment and return here to check status', 'info');
+            } else {
+                log('❌ No payment URL available', 'error');
             }
-        }
-
-        function simulatePayment() {
-            log('🔄 For successful payment testing, use these test cards:', 'warning');
-            log('✅ SUCCESS CARD: 5123450000000008', 'success');
-            log('   Expiry: 12/25, CVV: 100, Name: Test User', 'success');
-            log('✅ ALT SUCCESS: 4242424242424242', 'success');
-            log('   Expiry: 12/25, CVV: 123, Name: Test User', 'success');
-            log('❌ FAIL CARD: 4000000000000002 (for testing failures)', 'error');
-            log('1. Click "Open Payment Page" button', 'info');
-            log('2. Use one of the SUCCESS cards above', 'info');
-            log('3. Complete payment and return here to check status', 'info');
         }
 
         // Step 3: Payment Status Monitoring
@@ -540,7 +497,7 @@
             log('Checking payment status...', 'info');
 
             try {
-                const response = await fetch(`${CONFIG.baseUrl}/api/payment/status/${CONFIG.pillId}/`, {
+                const response = await fetch(`${CONFIG.baseUrl}/pills/${CONFIG.pillId}/`, {
                     method: 'GET',
                     headers: getAuthHeaders()
                 });
@@ -550,21 +507,13 @@
                 }
 
                 const result = await response.json();
+                displayPaymentStatus(result);
 
-                if (result.success) {
-                    displayPaymentStatus(result.data);
-
-                    if (result.data.paid) {
-                        log(`✅ Payment confirmed!`, 'success');
-                        setStepCompleted(3);
-                        activateStep(5);
-                        document.getElementById('verify-btn').disabled = false;
-                        stopStatusPolling();
-                    } else {
-                        log(`Payment status: ${result.data.status}`, 'warning');
-                    }
+                if (result.paid) {
+                    log(`✅ Payment confirmed!`, 'success');
+                    setStepCompleted(3);
                 } else {
-                    throw new Error(result.error || 'Failed to check payment status');
+                    log(`⏳ Payment still pending`, 'warning');
                 }
 
             } catch (error) {
@@ -584,56 +533,49 @@
                 <strong>Payment Status: ${isPaid ? '✅ PAID' : '⏳ PENDING'}</strong><br>
                 <strong>Pill Number:</strong> ${data.pill_number}<br>
                 <strong>Status:</strong> ${data.status}<br>
-                <strong>Amount:</strong> ${data.total_amount} ${data.currency}<br>
-                ${data.paid_at ? `<strong>Paid At:</strong> ${data.paid_at}<br>` : ''}
+                <strong>Final Price:</strong> ${data.final_price} EGP<br>
+                <strong>Shake-out Status:</strong> ${data.shakeout_payment_status || 'No invoice'}<br>
+                ${data.shakeout_invoice_id ? `<strong>Invoice ID:</strong> ${data.shakeout_invoice_id}<br>` : ''}
                 <strong>Last Checked:</strong> ${new Date().toLocaleString()}
             `;
 
             document.getElementById('payment-status-data').style.display = 'block';
         }
 
-        function startStatusPolling() {
-            if (pollingInterval) return;
+        // Webhook Simulation
+        async function simulateWebhook(status) {
+            log(`Simulating ${status} webhook...`, 'info');
 
-            log('Started automatic status polling (every 5 seconds)', 'info');
-            document.getElementById('start-polling-btn').disabled = true;
-            document.getElementById('stop-polling-btn').disabled = false;
-
-            pollingInterval = setInterval(checkPaymentStatus, 5000);
-        }
-
-        function stopStatusPolling() {
-            if (pollingInterval) {
-                clearInterval(pollingInterval);
-                pollingInterval = null;
-                log('Stopped automatic status polling', 'info');
-                document.getElementById('start-polling-btn').disabled = false;
-                document.getElementById('stop-polling-btn').disabled = true;
+            if (!shakeoutData) {
+                log('❌ No Shake-out invoice data available for webhook simulation', 'error');
+                return;
             }
-        }
-
-        // Step 4: Webhook Simulation
-        async function simulateSuccessWebhook() {
-            log('Simulating successful payment webhook...', 'info');
 
             const webhookData = {
-                status: 'paid',
-                invoiceId: paymentData?.invoice_id || 'TEST-12345',
-                payLoad: {
-                    pill_number: CONFIG.pillNumber,
-                    pill_id: CONFIG.pillId,
-                    user_id: 1,
-                    original_total: pillData?.final_price || '1220.0'
-                },
-                created_at: new Date().toISOString(),
-                amount: parseFloat(pillData?.final_price || 1220),
-                currency: 'EGP',
-                transaction_id: `TXN_${Date.now()}`,
-                payment_method: 'credit_card'
+                type: "InvoiceStatusUpdated",
+                data: {
+                    invoice_id: shakeoutData.invoice_id,
+                    invoice_ref: shakeoutData.invoice_ref,
+                    payment_method: "credit_card",
+                    invoice_status: status,
+                    amount: parseFloat(shakeoutData.total_amount),
+                    referenceNumber: `REF_${Date.now()}`,
+                    updated_at: new Date().toISOString()
+                }
             };
 
+            // Calculate signature for webhook validation
+            const signatureString = webhookData.data.invoice_id + 
+                                  webhookData.data.amount + 
+                                  webhookData.data.invoice_status + 
+                                  webhookData.data.updated_at + 
+                                  "9aa639b63b2a4c3182f73771fb2e11df"; // SECRET_KEY
+
+            // Simple SHA-256 simulation (in real implementation, use proper library)
+            webhookData.signature = btoa(signatureString).slice(0, 64);
+
             try {
-                const response = await fetch(`${CONFIG.baseUrl}/api/payment/webhook/fawaterak/`, {
+                const response = await fetch(`${CONFIG.baseUrl}/api/webhook/shakeout/`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -641,111 +583,21 @@
                     body: JSON.stringify(webhookData)
                 });
 
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                }
-
                 const result = await response.json();
 
-                if (result.success) {
-                    log('✅ Success webhook processed successfully', 'success');
-                    showSuccessBox('step4', `Webhook processed: Payment confirmed for pill ${result.data.pill_number}`);
+                if (response.ok && result.success) {
+                    log(`✅ ${status.toUpperCase()} webhook processed successfully`, 'success');
+                    showSuccessBox('step3', `Webhook processed: Payment ${status} for pill ${result.pill_number}`);
 
-                    // Trigger status check
+                    // Check status after webhook
                     setTimeout(checkPaymentStatus, 1000);
-                    setStepCompleted(4);
 
                 } else {
                     throw new Error(result.error || 'Webhook processing failed');
                 }
 
             } catch (error) {
-                log(`✗ Error processing success webhook: ${error.message}`, 'error');
-            }
-        }
-
-        async function simulateFailedWebhook() {
-            log('Simulating failed payment webhook...', 'info');
-
-            const webhookData = {
-                status: 'failed',
-                invoiceId: paymentData?.invoice_id || 'TEST-12345',
-                payLoad: {
-                    pill_number: CONFIG.pillNumber,
-                    pill_id: CONFIG.pillId,
-                    user_id: 1
-                },
-                created_at: new Date().toISOString(),
-                failure_reason: 'Insufficient funds',
-                error_code: 'CARD_DECLINED'
-            };
-
-            try {
-                const response = await fetch(`${CONFIG.baseUrl}/api/payment/webhook/fawaterak/`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(webhookData)
-                });
-
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                }
-
-                const result = await response.json();
-                log('⚠️ Failed webhook processed', 'warning');
-                showWarningBox('step4', `Webhook processed: Payment failed for pill ${CONFIG.pillNumber} - ${webhookData.failure_reason}`);
-
-            } catch (error) {
-                log(`✗ Error processing failed webhook: ${error.message}`, 'error');
-            }
-        }
-
-        // Step 5: Final Verification
-        async function verifyFinalStatus() {
-            log('Performing final verification...', 'info');
-
-            // Reload pill data to see final status
-            try {
-                const response = await fetch(`${CONFIG.baseUrl}/pills/${CONFIG.pillId}/`, {
-                    method: 'GET',
-                    headers: getAuthHeaders()
-                });
-
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                }
-
-                const finalPillData = await response.json();
-
-                const verificationHtml = `
-                    <div class="${finalPillData.paid ? 'success-box' : 'warning-box'}">
-                        <h4>Final Verification Results</h4>
-                        <p><strong>Pill Number:</strong> ${finalPillData.pill_number}</p>
-                        <p><strong>Payment Status:</strong> ${finalPillData.paid ? '✅ PAID' : '❌ UNPAID'}</p>
-                        <p><strong>Total Amount:</strong> ${finalPillData.final_price} EGP</p>
-                        <p><strong>Last Updated:</strong> ${new Date().toLocaleString()}</p>
-
-                        ${finalPillData.paid ?
-                            '<p style="color: green; font-weight: bold;">🎉 Payment cycle completed successfully!</p>' :
-                            '<p style="color: orange;">⏳ Payment is still pending. Try the webhook simulation above.</p>'
-                        }
-                    </div>
-                `;
-
-                document.getElementById('final-verification').innerHTML = verificationHtml;
-                document.getElementById('final-verification').style.display = 'block';
-
-                if (finalPillData.paid) {
-                    log('🎉 Payment verification successful - Pill is marked as PAID', 'success');
-                    setStepCompleted(5);
-                } else {
-                    log('⏳ Payment verification - Pill is still UNPAID', 'warning');
-                }
-
-            } catch (error) {
-                log(`✗ Error during final verification: ${error.message}`, 'error');
+                log(`✗ Error processing ${status} webhook: ${error.message}`, 'error');
             }
         }
 
@@ -756,10 +608,6 @@
 
         function showErrorBox(stepId, message) {
             showMessageBox(stepId, message, 'error-box');
-        }
-
-        function showWarningBox(stepId, message) {
-            showMessageBox(stepId, message, 'warning-box');
         }
 
         function showMessageBox(stepId, message, className) {
@@ -778,15 +626,11 @@
 
         // Initialize
         document.addEventListener('DOMContentLoaded', function() {
-            log('🚀 Fawaterak Payment Demo initialized', 'info');
+            log('🚀 Shake-out Payment Demo initialized', 'info');
             log(`Base URL: ${CONFIG.baseUrl}`, 'info');
-            log(`Testing Pill ID: ${CONFIG.pillId}`, 'info');
+            log(`Testing Pill ID: ${CONFIG.pillId}`, 'info');  
+            log(`Webhook URL: https://api2.bookefay.com/api/webhook/shakeout/`, 'info');
             log('Click "Load Pill #30" to start the demo', 'info');
-        });
-
-        // Cleanup on page unload
-        window.addEventListener('beforeunload', function() {
-            stopStatusPolling();
         });
     </script>
 </body>

@@ -3,6 +3,7 @@ from django.urls import path
 from products import payment_views
 from products.webhooks import test_webhook, ping_endpoint  # Removed fawaterak_webhook import
 from products.khazenly_webhooks import khazenly_order_status_webhook
+from products.shakeout_webhooks import shakeout_webhook  # Add Shake-out webhook import
 from . import views
 
 app_name = 'products'
@@ -131,5 +132,9 @@ urlpatterns = [
     
     # Khazenly Webhook
     path('api/webhook/khazenly/order-status/', khazenly_order_status_webhook, name='khazenly_order_status_webhook'),
+    # Shake-out Webhook
+    path('api/webhook/shakeout/', shakeout_webhook, name='shakeout_webhook'),
+    # Shake-out Invoice Creation Endpoint
+    path('pills/<int:pill_id>/create-shakeout-invoice/', payment_views.create_shakeout_invoice_view, name='create_shakeout_invoice'),
 ]
 
