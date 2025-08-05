@@ -921,6 +921,20 @@ class PillAddressCreateSerializer(serializers.ModelSerializer):
         fields = ['id', 'pill', 'name', 'email', 'phone', 'address', 'government','city', 'pay_method']
         read_only_fields = ['id', 'pill']
 
+    def validate_government(self, value):
+        """Validate that government is provided"""
+        if not value:
+            raise serializers.ValidationError("Government field is required.")
+        return value
+
+    def validate(self, data):
+        """Additional validation for the entire object"""
+        if not data.get('government'):
+            raise serializers.ValidationError({
+                'government': 'Government field is required when creating a pill address.'
+            })
+        return data
+
 class CouponDiscountSerializer(serializers.ModelSerializer):
     is_active = serializers.SerializerMethodField()
     is_available = serializers.SerializerMethodField()

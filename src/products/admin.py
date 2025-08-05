@@ -13,6 +13,30 @@ from .models import (
 
 import json
 
+class GovernmentListFilter(admin.SimpleListFilter):
+    title = 'Government'
+    parameter_name = 'government'
+
+    def lookups(self, request, model_admin):
+        from .models import GOVERNMENT_CHOICES
+        
+        # Add custom option for null/blank governments
+        choices = [
+            ('null', 'No Government (Empty)'),
+        ]
+        
+        # Add all government choices
+        choices.extend(GOVERNMENT_CHOICES)
+        
+        return choices
+
+    def queryset(self, request, queryset):
+        if self.value() == 'null':
+            return queryset.filter(government__isnull=True) | queryset.filter(government='')
+        elif self.value():
+            return queryset.filter(government=self.value())
+        return queryset
+
 class SubCategoryInline(admin.TabularInline):
     model = SubCategory
     extra = 1
@@ -198,7 +222,7 @@ class PillAdmin(admin.ModelAdmin):
         error_count = 0
         
         # Filter only paid pills that don't have Khazenly orders
-        eligible_pills = queryset.filter(paid=True, khazenly_data__isnull=True)
+        eligible_pills = queryset.filter(paid=True)
         
         for pill in eligible_pills:
             try:
@@ -364,10 +388,29 @@ class StockAlertAdmin(admin.ModelAdmin):
     autocomplete_fields = ('user', 'product')
     search_fields = ('user__username', 'email', 'product__name')
 
+@admin.register(PillAddress)
+class PillAddressAdmin(admin.ModelAdmin):
+    list_display = ('name', 'phone','government', 'pill_number', 'email', 'city','address', 'pill__paid')
+    list_filter = (GovernmentListFilter, 'pay_method', 'city', 'pill__status','pill__paid')
+    search_fields = ('name', 'phone', 'pill__pill_number', 'email')
+    autocomplete_fields = ('pill',)
+    list_editable = ('government',)
+    readonly_fields = ('pill_number',)
+    
+    
+    @admin.display(description='Pill Number', ordering='pill__pill_number')
+    def pill_number(self, obj):
+        return obj.pill.pill_number if obj.pill else '-'
+    
+    def get_queryset(self, request):
+        # Optimize queryset by selecting related objects
+        qs = super().get_queryset(request)
+        return qs.select_related('pill')
+
 admin.site.register(ProductImage)
 admin.site.register(ProductDescription)
 admin.site.register(PillItem)
-admin.site.register(PillAddress)
+# admin.site.register(PillAddress)
 admin.site.register(PillStatusLog)
 admin.site.register(PriceDropAlert)
 admin.site.register(SpinWheelResult)

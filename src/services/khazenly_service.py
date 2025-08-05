@@ -191,16 +191,17 @@ class KhazenlyService:
                     "discountAmount": total_discount,
                     "taxAmount": 0,
                     "invoiceTotalAmount": total_amount,
+                    "codAmount": 0,  # FIXED: Set COD amount to 0 for prepaid orders
                     "weight": 0,
                     "noOfBoxes": 1,
-                    "paymentMethod": "Cash-on-Delivery",
-                    "paymentStatus": "pending",
+                    "paymentMethod": "Prepaid",  # FIXED: Changed from "Cash-on-Delivery" to "Prepaid"
+                    "paymentStatus": "paid",     # FIXED: Changed from "pending" to "paid"
                     "storeCurrency": "EGP",
                     "isPickedByMerchant": False,
                     "merchantAWB": "",
                     "merchantCourier": "",
                     "merchantAwbDocument": "",
-                    "additionalNotes": f"Order for pill {pill.pill_number} - {len(line_items)} items"
+                    "additionalNotes": f"Prepaid order for pill {pill.pill_number} - {len(line_items)} items - Payment completed via Shake-out"
                 },
                 "Customer": {
                     "customerName": (address.name or f"Customer {pill.user.username}")[:50],  # Limit name length
