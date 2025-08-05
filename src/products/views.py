@@ -1361,6 +1361,86 @@ class ApplyPayRequestView(APIView):
             pill.save()
         return Response({"status": "Pay request applied successfully"}, status=status.HTTP_200_OK)
 
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework import status
+from services.shakeout_service import shakeout_service
+import logging
+
+logger = logging.getLogger(__name__)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def create_shakeout_invoice_view(request, pill_id):
+    """
+    Create a Shake-out invoice for a specific pill
+    """
+    try:
+        # Get the pill
+        pill = Pill.objects.get(id=pill_id, user=request.user)
+        
+        # Check if pill already has a Shake-out invoice
+        if pill.shakeout_invoice_id:
+            # Check if the existing invoice is expired or invalid
+            if pill.is_shakeout_invoice_expired():
+                logger.info(f"Existing Shake-out invoice {pill.shakeout_invoice_id} for pill {pill_id} is expired/invalid - creating new one")
+                
+                # Clear old invoice data to create a new one
+                pill.shakeout_invoice_id = None
+                pill.shakeout_invoice_ref = None
+                pill.shakeout_data = None
+                pill.shakeout_created_at = None
+                pill.save(update_fields=['shakeout_invoice_id', 'shakeout_invoice_ref', 'shakeout_data', 'shakeout_created_at'])
+            else:
+                return Response({
+                    'success': False,
+                    'error': 'Pill already has a Shake-out invoice',
+                    'data': {
+                        'invoice_id': pill.shakeout_invoice_id,
+                        'invoice_ref': pill.shakeout_invoice_ref,
+                        'payment_url': pill.shakeout_payment_url,
+                        'created_at': pill.shakeout_created_at.isoformat() if pill.shakeout_created_at else None,
+                        'status': 'active'
+                    }
+                }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Create Shake-out invoice
+        payment_url = pill.create_shakeout_invoice()
+        
+        if payment_url:
+            # Refresh pill from database to get updated data
+            pill.refresh_from_db()
+            
+            return Response({
+                'success': True,
+                'message': 'Shake-out invoice created successfully',
+                'data': {
+                    'invoice_id': pill.shakeout_invoice_id,
+                    'invoice_ref': pill.shakeout_invoice_ref,
+                    'payment_url': payment_url,
+                    'total_amount': pill.final_price(),
+                    'pill_number': pill.pill_number
+                }
+            }, status=status.HTTP_201_CREATED)
+        else:
+            return Response({
+                'success': False,
+                'error': 'Failed to create Shake-out invoice'
+            }, status=status.HTTP_400_BAD_REQUEST)
+            
+    except Pill.DoesNotExist:
+        return Response({
+            'success': False,
+            'error': 'Pill not found or access denied'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Error creating Shake-out invoice for pill {pill_id}: {str(e)}")
+        return Response({
+            'success': False,
+            'error': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
 
 
