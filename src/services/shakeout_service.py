@@ -49,12 +49,33 @@ class ShakeoutService:
         try:
             logger.info(f"Creating Shake-out invoice for pill {pill.pill_number}")
             
+            # Check if pill already has a Shake-out invoice
+            if pill.shakeout_invoice_id:
+                logger.info(f"Pill {pill.pill_number} already has Shake-out invoice: {pill.shakeout_invoice_id}")
+                
+                # Return existing invoice data in unified format
+                return {
+                    'success': False,
+                    'error': 'Pill already has a Shake-out invoice',
+                    'data': {
+                        'invoice_id': pill.shakeout_invoice_id,
+                        'invoice_ref': pill.shakeout_invoice_ref,
+                        'url': self._build_payment_url(pill.shakeout_invoice_id, pill.shakeout_invoice_ref),
+                        'payment_url': self._build_payment_url(pill.shakeout_invoice_id, pill.shakeout_invoice_ref),
+                        'created_at': pill.shakeout_created_at.isoformat() if pill.shakeout_created_at else None,
+                        'status': 'active',  # Assume active if stored
+                        'total_amount': float(pill.final_price()),
+                        'currency': 'EGP'
+                    }
+                }
+            
             # Get pill address
             pill_address = pill.pilladdress
             if not pill_address:
                 return {
                     'success': False,
-                    'error': 'Pill address information is required'
+                    'error': 'Pill address information is required',
+                    'data': None
                 }
             
             # Format phone number for Shake-out (must be in format +201234567890)
@@ -127,9 +148,9 @@ class ShakeoutService:
                 "due_date": (datetime.now() + timedelta(days=30)).strftime('%Y-%m-%d'),
                 "customer": customer_data,
                 "redirection_urls": {
-                    "success_url": f"{settings.SITE_URL}/profile/orders?status=success&pill_number={pill.pill_number}&amount={final_amount}",
-                    "fail_url": f"{settings.SITE_URL}/profile/orders?status=failed&pill_number={pill.pill_number}&amount={final_amount}",
-                    "pending_url": f"{settings.SITE_URL}/profile/orders?status=pending&pill_number={pill.pill_number}&amount={final_amount}"
+                    "success_url": f"{settings.SUCCESS_URL}",
+                    "fail_url": f"{settings.FAIL_URL}",
+                    "pending_url": f"{settings.PENDING_URL}"
                 },
                 "invoice_items": invoice_items,
                 "tax_enabled": False,
@@ -158,48 +179,57 @@ class ShakeoutService:
             if response.status_code == 200:
                 response_data = response.json()
                 
-                # Extract response data - Fix: Use correct field names from API response
-                invoice_id = response_data.get('data', {}).get('invoice_id')
-                invoice_ref = response_data.get('data', {}).get('invoice_ref')  # Fixed: was 'reference_id'
-                payment_url = response_data.get('data', {}).get('url')  # Fixed: was 'invoice_url'
-                
-                return {
-                    'success': True,
-                    'data': {
-                        'invoice_id': invoice_id,
-                        'invoice_ref': invoice_ref,
-                        'url': payment_url,  # Keep as 'url' to match API response
-                        'payment_url': payment_url,  # Also provide as 'payment_url' for compatibility
-                        'total_amount': final_amount,
-                        'currency': 'EGP',
-                        'raw_response': response_data
+                # Handle successful creation - unify response format
+                if response_data.get('status') == 'success':
+                    # Successful creation response format
+                    data = response_data.get('data', {})
+                    invoice_id = data.get('invoice_id')
+                    invoice_ref = data.get('invoice_ref')
+                    payment_url = data.get('url')
+                    
+                    return {
+                        'success': True,
+                        'message': response_data.get('message', 'Invoice created successfully'),
+                        'data': {
+                            'invoice_id': invoice_id,
+                            'invoice_ref': invoice_ref,
+                            'url': payment_url,
+                            'payment_url': payment_url,  # Unified key name
+                            'created_at': timezone.now().isoformat(),
+                            'status': 'active',
+                            'total_amount': float(final_amount),
+                            'currency': 'EGP',
+                            'raw_response': response_data
+                        }
                     }
-                }
+                else:
+                    # Handle API error responses
+                    return self._handle_api_error_response(response_data)
             else:
-                error_data = response.json() if response.content else {}
-                error_message = error_data.get('message', f'HTTP {response.status_code}')
-                
-                # Log detailed error for debugging
-                if 'errors' in error_data:
-                    logger.error(f"Shake-out validation errors: {error_data['errors']}")
-                
-                return {
-                    'success': False,
-                    'error': f'Shake-out API error: {error_message}',
-                    'details': error_data
-                }
+                # Handle HTTP errors
+                try:
+                    error_data = response.json()
+                    return self._handle_api_error_response(error_data)
+                except:
+                    return {
+                        'success': False,
+                        'error': f'HTTP {response.status_code}: {response.text}',
+                        'data': None
+                    }
                 
         except requests.exceptions.RequestException as e:
             logger.error(f"Network error creating Shake-out invoice: {str(e)}")
             return {
                 'success': False,
-                'error': f'Network error: {str(e)}'
+                'error': f'Network error: {str(e)}',
+                'data': None
             }
         except Exception as e:
             logger.error(f"Unexpected error creating Shake-out invoice: {str(e)}")
             return {
                 'success': False,
-                'error': f'Unexpected error: {str(e)}'
+                'error': f'Unexpected error: {str(e)}',
+                'data': None
             }
 
     def verify_webhook_signature(self, invoice_id, amount, invoice_status, updated_at, received_signature):
@@ -229,6 +259,41 @@ class ShakeoutService:
         except Exception as e:
             logger.error(f"Exception checking payment status: {e}")
             return {'success': False, 'error': str(e)}
+
+    def _handle_api_error_response(self, response_data):
+        """Handle different API error response formats and unify them"""
+        # Handle case where success=False in response
+        if 'success' in response_data and not response_data['success']:
+            data = response_data.get('data', {})
+            
+            return {
+                'success': False,
+                'error': response_data.get('error', 'Unknown API error'),
+                'data': {
+                    'invoice_id': data.get('invoice_id'),
+                    'invoice_ref': data.get('invoice_ref'),
+                    'url': data.get('payment_url') or self._build_payment_url(data.get('invoice_id'), data.get('invoice_ref')),
+                    'payment_url': data.get('payment_url') or self._build_payment_url(data.get('invoice_id'), data.get('invoice_ref')),
+                    'created_at': data.get('created_at'),
+                    'status': data.get('status', 'unknown'),
+                    'total_amount': None,  # Not provided in error responses
+                    'currency': 'EGP'
+                } if data else None
+            }
+        
+        # Handle other error formats
+        error_message = response_data.get('message') or response_data.get('error', 'Unknown API error')
+        return {
+            'success': False,
+            'error': error_message,
+            'data': None
+        }
+
+    def _build_payment_url(self, invoice_id, invoice_ref):
+        """Build payment URL from invoice ID and reference"""
+        if invoice_id and invoice_ref:
+            return f"https://dash.shake-out.com/invoice/{invoice_id}/{invoice_ref}"
+        return None
 
 # Global instance
 shakeout_service = ShakeoutService()
