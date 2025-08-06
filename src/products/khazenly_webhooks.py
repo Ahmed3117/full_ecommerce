@@ -201,31 +201,66 @@ def verify_webhook_signature(payload, signature, secret):
 def update_pill_status_from_khazenly(pill, khazenly_status):
     """
     Update pill status based on Khazenly order status
+    Using official Khazenly status names from documentation
     """
     try:
         old_status = pill.status
         new_status = old_status  # Default: no change
         
-        # Map Khazenly statuses to our pill statuses
-        if khazenly_status in ["Out for Delivery"]:
+        # Map Khazenly statuses to our pill statuses using official status names
+        if khazenly_status in [
+            "Order Ready", 
+            "Order Ready - Payment Pending",
+            "Order Collected from Fulfilment Center",
+            "Order Reached Sorting Center",
+            "Order In-transit to Delivery Hub",
+            "Order Ready for Final Dispatch"
+        ]:
+            new_status = 're'  # Ready for delivery
+            
+        elif khazenly_status in [
+            "Out for Delivery",
+            "Order Rescheduled"  # Still considered under delivery, just rescheduled
+        ]:
             new_status = 'u'  # Under Delivery
-        elif khazenly_status in ["Order Delivered"]:
+            
+        elif khazenly_status in [
+            "Order Delivered",
+            "Picked by Merchant"  # Delivered directly by merchant
+        ]:
             new_status = 'd'  # Delivered
-        elif khazenly_status in ["Order Delivery Failed", "Returned to Fulfilment Center"]:
+            
+        elif khazenly_status in [
+            "Order Delivery Failed",
+            "Returned to Fulfilment Center"
+        ]:
             new_status = 'r'  # Refused
-        elif khazenly_status in ["Cancelled", "Voided", "Deleted"]:
+            
+        elif khazenly_status in [
+            "Deleted",
+            "Voided", 
+            "Cancelled"
+        ]:
             new_status = 'c'  # Canceled
-        # Add more mappings as needed
+            
+        # Note: Some statuses like "New Order", "Order Being Prepared" might not need status changes
+        # as they represent early stages that might already be handled by payment confirmation
+        
+        # Statuses we might want to log but not change pill status:
+        # - "New Order" (order just created)
+        # - "Order Being Prepared" (being prepared at warehouse)
+        # - "Return Receiving In Progress", "Return Completed" (return processes)
+        # - "Damaged", "Lost" (might need special handling)
         
         # Update status if changed
         if new_status != old_status:
             pill.status = new_status
             pill.save()
             
-            logger.info(f"Updated Pill #{pill.pill_number} status from {old_status} to {new_status}")
+            logger.info(f"Updated Pill #{pill.pill_number} status from '{old_status}' to '{new_status}' (Khazenly: '{khazenly_status}')")
             return True
         else:
-            logger.info(f"No status change needed for Pill #{pill.pill_number} (current: {old_status})")
+            logger.info(f"No status change needed for Pill #{pill.pill_number} (current: '{old_status}', Khazenly: '{khazenly_status}')")
             return False
             
     except Exception as e:

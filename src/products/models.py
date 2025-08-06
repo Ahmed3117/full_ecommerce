@@ -47,6 +47,8 @@ PILL_STATUS_CHOICES = [
     ('i', 'initiated'),
     ('w', 'Waiting'),
     ('p', 'Paid'),
+    ('bp', 'Being Prepared'),
+    ('re', 'ready for delivery'),
     ('u', 'Under Delivery'),
     ('d', 'Delivered'),
     ('r', 'Refused'),
@@ -449,7 +451,7 @@ class PillItem(models.Model):
     quantity = models.PositiveIntegerField(default=1)
     size = models.CharField(max_length=10, choices=SIZES_CHOICES, null=True, blank=True)
     color = models.ForeignKey(Color, on_delete=models.SET_NULL, null=True, blank=True)
-    status = models.CharField(choices=PILL_STATUS_CHOICES, max_length=1, null=True, blank=True)
+    status = models.CharField(choices=PILL_STATUS_CHOICES, max_length=2, null=True, blank=True)
     date_added = models.DateTimeField(auto_now_add=True, null=True, blank=True)
     
     # New fields for sales analysis
@@ -490,7 +492,7 @@ class PillItem(models.Model):
 class Pill(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='pills')
     items = models.ManyToManyField(PillItem, related_name='pills')
-    status = models.CharField(choices=PILL_STATUS_CHOICES, max_length=1, default='i')
+    status = models.CharField(choices=PILL_STATUS_CHOICES, max_length=2, default='i')
     date_added = models.DateTimeField(auto_now_add=True)
     paid = models.BooleanField(default=False)
     coupon = models.ForeignKey('CouponDiscount', on_delete=models.SET_NULL, null=True, blank=True, related_name='pills')
@@ -579,6 +581,13 @@ class Pill(models.Model):
     def _create_khazenly_order(self):
         """Create Khazenly order when paid becomes True"""
         try:
+            # Check if order already sent to Khazenly - skip if it exists
+            if self.has_khazenly_order:
+                logger.info(f"Skipping Khazenly order creation for pill {self.pill_number} - order already exists")
+                logger.info(f"  - Existing Khazenly Order ID: {self.khazenly_order_id}")
+                logger.info(f"  - Existing Sales Order Number: {self.khazenly_sales_order_number}")
+                return
+            
             from services.khazenly_service import khazenly_service
             
             logger.info(f"Creating Khazenly order for pill {self.pill_number}")
@@ -930,7 +939,7 @@ class PillAddress(models.Model):
 
 class PillStatusLog(models.Model):
     pill = models.ForeignKey(Pill, on_delete=models.CASCADE, related_name='status_logs')
-    status = models.CharField(choices=PILL_STATUS_CHOICES, max_length=1)
+    status = models.CharField(choices=PILL_STATUS_CHOICES, max_length=2)
     changed_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

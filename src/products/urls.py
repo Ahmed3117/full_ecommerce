@@ -136,5 +136,8 @@ urlpatterns = [
     path('api/webhook/shakeout/', shakeout_webhook, name='shakeout_webhook'),
     # Shake-out Invoice Creation Endpoint
     path('pills/<int:pill_id>/create-shakeout-invoice/', payment_views.create_shakeout_invoice_view, name='create_shakeout_invoice'),
+    
+    # Khazenly 
+    path('api/resend-khazenly-orders/', views.resend_khazenly_orders_view, name='resend_khazenly_orders'),
 ]
 

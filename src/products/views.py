@@ -1441,6 +1441,186 @@ def create_shakeout_invoice_view(request, pill_id):
             'error': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+@api_view(['POST'])
+@permission_classes([IsAdminUser])
+def resend_khazenly_orders_view(request):
+    """
+    API endpoint to resend all paid pills to Khazenly in batches
+    Call from Postman: POST /api/products/resend-khazenly-orders/
+    
+    Body (optional):
+    {
+        "batch_size": 10,
+        "delay": 20,
+        "force": false,
+        "dry_run": false
+    }
+    """
+    logger = logging.getLogger(__name__)
+    
+    # Get parameters from request body
+    batch_size = request.data.get('batch_size', 10)
+    delay = request.data.get('delay', 20)
+    force = request.data.get('force', False)
+    dry_run = request.data.get('dry_run', False)
+    
+    try:
+        # Validate parameters
+        if not isinstance(batch_size, int) or batch_size < 1:
+            return Response({
+                'success': False,
+                'error': 'batch_size must be a positive integer'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        if not isinstance(delay, int) or delay < 0:
+            return Response({
+                'success': False,
+                'error': 'delay must be a non-negative integer'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Get pills to process
+        if force:
+            pills_query = Pill.objects.filter(paid=True, status='p')
+        else:
+            pills_query = Pill.objects.filter(
+                paid=True, 
+                status='p',
+                khazenly_order_id__isnull=True
+            )
+        
+        pills = list(pills_query.order_by('date_added'))
+        
+        if not pills:
+            return Response({
+                'success': True,
+                'message': 'No pills found to process',
+                'stats': {
+                    'total_pills': 0,
+                    'successful_orders': 0,
+                    'failed_orders': 0,
+                    'success_rate': 0
+                }
+            })
+        
+        total_batches = (len(pills) + batch_size - 1) // batch_size
+        successful_orders = 0
+        failed_orders = 0
+        batch_results = []
+        
+        # Process pills in batches
+        for batch_num in range(total_batches):
+            start_idx = batch_num * batch_size
+            end_idx = min(start_idx + batch_size, len(pills))
+            batch_pills = pills[start_idx:end_idx]
+            
+            batch_success = 0
+            batch_failures = 0
+            batch_details = []
+            
+            for pill in batch_pills:
+                try:
+                    pill_info = {
+                        'pill_id': pill.id,
+                        'pill_number': pill.pill_number,
+                        'user': pill.user.username if pill.user else None,
+                        'items_count': pill.items.count(),
+                        'total_price': pill.final_price()
+                    }
+                    
+                    if dry_run:
+                        batch_details.append({
+                            **pill_info,
+                            'status': 'would_process',
+                            'message': 'Dry run - no actual order sent'
+                        })
+                        batch_success += 1
+                        continue
+                    
+                    # Create Khazenly order
+                    result = khazenly_service.create_order(pill)
+                    
+                    if result['success']:
+                        data = result['data']
+                        
+                        # Update pill with Khazenly information
+                        pill.khazenly_data = data
+                        pill.khazenly_order_id = data.get('khazenly_order_id')
+                        pill.khazenly_sales_order_number = data.get('sales_order_number')
+                        pill.khazenly_created_at = timezone.now()
+                        pill.is_shipped = True
+                        pill.save(update_fields=[
+                            'khazenly_data', 
+                            'khazenly_order_id', 
+                            'khazenly_sales_order_number',
+                            'khazenly_created_at',
+                            'is_shipped'
+                        ])
+                        
+                        batch_details.append({
+                            **pill_info,
+                            'status': 'success',
+                            'khazenly_order_id': data.get('khazenly_order_id'),
+                            'sales_order_number': data.get('sales_order_number')
+                        })
+                        batch_success += 1
+                    else:
+                        error_msg = result.get('error', 'Unknown error')
+                        batch_details.append({
+                            **pill_info,
+                            'status': 'failed',
+                            'error': error_msg
+                        })
+                        batch_failures += 1
+                        logger.error(f'Failed to create Khazenly order for pill {pill.pill_number}: {error_msg}')
+                
+                except Exception as e:
+                    batch_details.append({
+                        **pill_info,
+                        'status': 'error',
+                        'error': str(e)
+                    })
+                    batch_failures += 1
+                    logger.error(f'Exception processing pill {pill.pill_number}: {str(e)}')
+            
+            successful_orders += batch_success
+            failed_orders += batch_failures
+            
+            batch_results.append({
+                'batch_number': batch_num + 1,
+                'pills_processed': len(batch_pills),
+                'successful': batch_success,
+                'failed': batch_failures,
+                'details': batch_details
+            })
+            
+            # Wait between batches (except for the last batch)
+            if batch_num < total_batches - 1 and not dry_run:
+                time.sleep(delay)
+        
+        return Response({
+            'success': True,
+            'message': f'Khazenly order resend process completed{"" if not dry_run else " (DRY RUN)"}',
+            'stats': {
+                'total_pills': len(pills),
+                'successful_orders': successful_orders,
+                'failed_orders': failed_orders,
+                'success_rate': round((successful_orders/len(pills)*100), 1) if pills else 0,
+                'total_batches': total_batches,
+                'batch_size': batch_size,
+                'delay_seconds': delay,
+                'force_resend': force,
+                'dry_run': dry_run
+            },
+            'batches': batch_results
+        })
+        
+    except Exception as e:
+        logger.error(f'Error in resend_khazenly_orders_view: {str(e)}')
+        return Response({
+            'success': False,
+            'error': f'Internal server error: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
 
 

@@ -9,6 +9,7 @@ from django.contrib.auth.models import User
 from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
 from django.shortcuts import redirect
+from django.utils import timezone
 import json
 import logging
 
@@ -378,34 +379,47 @@ class CreateShakeoutInvoiceView(APIView):
             
             logger.info(f"Pill address found: {pill.pilladdress.name}, phone: {pill.pilladdress.phone}")
             
-            # Create Shake-out invoice
-            logger.info(f"Calling pill.create_shakeout_invoice() for pill {pill_id}")
-            payment_url = pill.create_shakeout_invoice()
-            logger.info(f"create_shakeout_invoice returned: {payment_url}")
+            # Create Shake-out invoice using the service directly to get detailed error info
+            logger.info(f"Calling shakeout_service.create_payment_invoice() for pill {pill_id}")
+            result = shakeout_service.create_payment_invoice(pill)
+            logger.info(f"shakeout_service.create_payment_invoice returned: {result}")
             
-            if payment_url:
-                # Refresh pill from database to get updated data
-                pill.refresh_from_db()
+            if result['success']:
+                # Update pill with invoice data from successful response
+                pill.shakeout_invoice_id = result['data']['invoice_id']
+                pill.shakeout_invoice_ref = result['data']['invoice_ref']
+                pill.shakeout_data = result['data']
+                pill.shakeout_created_at = timezone.now()
+                pill.save(update_fields=['shakeout_invoice_id', 'shakeout_invoice_ref', 'shakeout_data', 'shakeout_created_at'])
                 
                 logger.info(f"Successfully created Shake-out invoice for pill {pill_id}")
                 return Response({
                     'success': True,
-                    'message': 'Shake-out invoice created successfully',
+                    'message': result.get('message', 'Shake-out invoice created successfully'),
                     'data': {
-                        'invoice_id': pill.shakeout_invoice_id,
-                        'invoice_ref': pill.shakeout_invoice_ref,
-                        'payment_url': payment_url,
-                        'total_amount': pill.final_price(),
+                        'invoice_id': result['data']['invoice_id'],
+                        'invoice_ref': result['data']['invoice_ref'],
+                        'payment_url': result['data']['url'],
+                        'total_amount': result['data']['total_amount'],
                         'pill_number': pill.pill_number,
-                        'currency': 'EGP'
+                        'currency': result['data']['currency']
                     }
                 }, status=status.HTTP_201_CREATED)
             else:
-                logger.error(f"create_shakeout_invoice returned None for pill {pill_id}")
-                return Response({
+                # Return the actual error from Shake-out service
+                logger.error(f"Shake-out service error for pill {pill_id}: {result['error']}")
+                
+                response_data = {
                     'success': False,
-                    'error': 'Failed to create Shake-out invoice - check service logs'
-                }, status=status.HTTP_400_BAD_REQUEST)
+                    'error': result['error'],
+                    'pill_number': pill.pill_number
+                }
+                
+                # Include additional data if available (like existing invoice info)
+                if result.get('data'):
+                    response_data['data'] = result['data']
+                
+                return Response(response_data, status=status.HTTP_400_BAD_REQUEST)
                 
         except Exception as e:
             logger.error(f"Exception creating Shake-out invoice for pill {pill_id}: {str(e)}")
