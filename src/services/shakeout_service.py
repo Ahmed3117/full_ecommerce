@@ -17,7 +17,7 @@ class ShakeoutService:
         self.base_url = getattr(settings, 'SHAKEOUT_BASE_URL', 'https://dash.shake-out.com/api/public/vendor')
         self.create_invoice_url = f"{self.base_url}/invoice"
         
-        # Headers for API requests
+        # Headers for API requests - Back to working API key authentication
         self.headers = {
             'Content-Type': 'application/json',
             'Authorization': f'apikey {self.api_key}'
@@ -51,7 +51,7 @@ class ShakeoutService:
             
             # Check if pill already has a Shake-out invoice
             if pill.shakeout_invoice_id:
-                logger.info(f"Pill {pill.pill_number} already has Shake-out invoice: {pill.shakeout_invoice_id}")
+                logger.info(f"Pill {pill.pill_number} already has a Shake-out invoice: {pill.shakeout_invoice_id}")
                 
                 # Return existing invoice data in unified format
                 return {
@@ -148,9 +148,9 @@ class ShakeoutService:
                 "due_date": (datetime.now() + timedelta(days=30)).strftime('%Y-%m-%d'),
                 "customer": customer_data,
                 "redirection_urls": {
-                    "success_url": f"{settings.SUCCESS_URL}",
-                    "fail_url": f"{settings.FAIL_URL}",
-                    "pending_url": f"{settings.PENDING_URL}"
+                    "success_url": f"https://bookefay.com/payment-redirect/{pill.pill_number}/successful-payment/success/{int(datetime.now().timestamp() * 1000)}",
+                    "fail_url": f"https://bookefay.com/payment-redirect/{pill.pill_number}/failed-payment/failed/{int(datetime.now().timestamp() * 1000)}",
+                    "pending_url": f"https://bookefay.com/payment-redirect/{pill.pill_number}/pending-payment/pending/{int(datetime.now().timestamp() * 1000)}"
                 },
                 "invoice_items": invoice_items,
                 "tax_enabled": False,
@@ -166,54 +166,124 @@ class ShakeoutService:
             logger.info(f"  Pending: {invoice_data['redirection_urls']['pending_url']}")
             logger.info(f"  Fail: {invoice_data['redirection_urls']['fail_url']}")
             
-            # Make API request
-            response = requests.post(
-                self.create_invoice_url,
-                json=invoice_data,
-                headers=self.headers,
-                timeout=30
-            )
+            # Make API request with session and retry logic
+            session = requests.Session()
+            session.headers.update(self.headers)
             
-            logger.info(f"Shake-out response: {response.status_code} - {response.text}")
+            # Add SSL verification and additional session configuration
+            session.verify = True
+            session.timeout = 30
             
-            if response.status_code == 200:
-                response_data = response.json()
+            try:
+                # First attempt
+                response = session.post(
+                    self.create_invoice_url,
+                    json=invoice_data,
+                    timeout=30
+                )
                 
-                # Handle successful creation - unify response format
-                if response_data.get('status') == 'success':
-                    # Successful creation response format
-                    data = response_data.get('data', {})
-                    invoice_id = data.get('invoice_id')
-                    invoice_ref = data.get('invoice_ref')
-                    payment_url = data.get('url')
-                    
+                logger.info(f"Shake-out response: {response.status_code}")
+                logger.info(f"Response headers: {dict(response.headers)}")
+                logger.info(f"Response content (first 1000 chars): {response.text[:1000]}")
+                
+                # Check if response is empty
+                if not response.text.strip():
+                    logger.error("Received empty response from Shake-out API")
                     return {
-                        'success': True,
-                        'message': response_data.get('message', 'Invoice created successfully'),
-                        'data': {
-                            'invoice_id': invoice_id,
-                            'invoice_ref': invoice_ref,
-                            'url': payment_url,
-                            'payment_url': payment_url,  # Unified key name
-                            'created_at': timezone.now().isoformat(),
-                            'status': 'active',
-                            'total_amount': float(final_amount),
-                            'currency': 'EGP',
-                            'raw_response': response_data
-                        }
+                        'success': False,
+                        'error': f'Empty response from Shake-out API (HTTP {response.status_code})',
+                        'data': None
                     }
-                else:
-                    # Handle API error responses
-                    return self._handle_api_error_response(response_data)
+                
+                # If we get a Cloudflare challenge or HTML response
+                if (response.status_code == 403 and 'cloudflare' in response.text.lower()) or \
+                   (response.headers.get('content-type', '').startswith('text/html')):
+                    logger.warning("Received Cloudflare challenge or HTML response, retrying with different approach...")
+                    
+                    # Try with curl-like headers to appear more like a legitimate client
+                    retry_headers = {
+                        'Content-Type': 'application/json',
+                        'Authorization': f'apikey {self.api_key}',
+                        'User-Agent': 'curl/7.68.0',
+                        'Accept': '*/*',
+                        'Connection': 'keep-alive'
+                    }
+                    
+                    # Wait a moment before retry
+                    import time
+                    time.sleep(3)
+                    
+                    response = session.post(
+                        self.create_invoice_url,
+                        json=invoice_data,
+                        headers=retry_headers,
+                        timeout=30
+                    )
+                    
+                    logger.info(f"Retry response: {response.status_code}")
+                    logger.info(f"Retry response content (first 1000 chars): {response.text[:1000]}")
+                    
+                    # If still getting HTML/empty response after retry
+                    if not response.text.strip() or response.headers.get('content-type', '').startswith('text/html'):
+                        return {
+                            'success': False,
+                            'error': f'Shake-out API blocked by Cloudflare protection. HTTP {response.status_code}. Consider using a different approach or contact Shake-out support.',
+                            'data': None
+                        }
+                
+            finally:
+                session.close()
+            
+            # Handle successful responses (200 status)
+            if response.status_code == 200:
+                try:
+                    response_data = response.json()
+                    
+                    # Handle successful creation - unify response format
+                    if response_data.get('status') == 'success':
+                        # Successful creation response format
+                        data = response_data.get('data', {})
+                        invoice_id = data.get('invoice_id')
+                        invoice_ref = data.get('invoice_ref')
+                        payment_url = data.get('url')
+                        
+                        return {
+                            'success': True,
+                            'message': response_data.get('message', 'Invoice created successfully'),
+                            'data': {
+                                'invoice_id': invoice_id,
+                                'invoice_ref': invoice_ref,
+                                'url': payment_url,
+                                'payment_url': payment_url,  # Unified key name
+                                'created_at': timezone.now().isoformat(),
+                                'status': 'active',
+                                'total_amount': float(final_amount),
+                                'currency': 'EGP',
+                                'raw_response': response_data
+                            }
+                        }
+                    else:
+                        # Handle API error responses
+                        return self._handle_api_error_response(response_data)
+                        
+                except json.JSONDecodeError as e:
+                    logger.error(f"Failed to decode JSON response: {e}")
+                    logger.error(f"Raw response: {response.text}")
+                    return {
+                        'success': False,
+                        'error': f'Invalid JSON response from Shake-out API: {str(e)}',
+                        'data': None
+                    }
             else:
-                # Handle HTTP errors
+                # Handle HTTP errors (non-200 status codes)
                 try:
                     error_data = response.json()
                     return self._handle_api_error_response(error_data)
-                except:
+                except json.JSONDecodeError:
+                    # Response is not JSON (probably HTML error page)
                     return {
                         'success': False,
-                        'error': f'HTTP {response.status_code}: {response.text}',
+                        'error': f'HTTP {response.status_code}: {response.text[:200]}...' if len(response.text) > 200 else f'HTTP {response.status_code}: {response.text}',
                         'data': None
                     }
                 
